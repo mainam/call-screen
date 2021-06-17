@@ -1,0 +1,27 @@
+{
+  "name": "mainam-react-native-webrtc-call-screen",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/mainam/call-screen.git"
+  },
+  "author": "",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/mainam/call-screen/issues"
+  },
+  "homepage": "https://github.com/mainam/call-screen#readme",
+  "dependencies": {
+    "mainam-react-native-date-utils": "^2.0.9",
+    "react": "16.9.0",
+    "react-native": "0.61.5",
+    "react-native-incall-manager": "^3.3.0",
+    "react-native-voip-push-notification": "^3.3.0",
+    "react-native-webrtc": "^1.89.3"
+  }
+}
