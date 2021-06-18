@@ -21,7 +21,6 @@
     "react": "16.9.0",
     "react-native": "0.61.5",
     "react-native-incall-manager": "^3.3.0",
-    "react-native-voip-push-notification": "^3.3.0",
     "react-native-webrtc": "^1.89.3"
   }
 }

@@ -409,6 +409,7 @@ class CallScreen extends React.Component {
       "didActivateAudioSession",
       this.onRNCallKitDidActivateAudioSession
     );
+    VoipPushNotification.removeEventListener('register');
   };
   onOfferReceived = async (data) => {
     this.refOffer.current = data.description;
@@ -531,17 +532,17 @@ class CallScreen extends React.Component {
   };
   onConnected = async (data2) => {
     try {
+      debugger;
       if (this.refConnected.current) return; // nếu đã connect rồi thì bỏ qua
       this.refConnected.current = true; //đánh dấu là đã connect
       if (Platform.OS == "ios") {
         this.setupCallKeep();
-        VoipPushNotification.requestPermissions();
-        VoipPushNotification.registerVoipToken();
         VoipPushNotification.addEventListener("register", (token) => {
           // send token to your apn provider server
           this.refDeviceToken.current=token;
           this.connectToSocket(token);
         });
+        VoipPushNotification.registerVoipToken();
         // VoipPushNotification.addEventListener('notification', notification => {
         //   // Handle incoming pushes
         //   debugger;
