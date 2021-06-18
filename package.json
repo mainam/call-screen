@@ -1,6 +1,6 @@
 {
   "name": "mainam-react-native-webrtc-call-screen",
-  "version": "1.0.2",
+  "version": "1.0.3",
   "description": "",
   "main": "index.js",
   "scripts": {
@@ -19,8 +19,6 @@
   "dependencies": {
     "mainam-react-native-date-utils": "^2.0.9",
     "react": "16.9.0",
-    "react-native": "0.61.5",
-    "react-native-incall-manager": "^3.3.0",
-    "react-native-webrtc": "^1.89.3"
+    "react-native": "0.61.5"
   }
 }
