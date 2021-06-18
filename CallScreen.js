@@ -532,11 +532,11 @@ class CallScreen extends React.Component {
   };
   onConnected = async (data2) => {
     try {
-      debugger;
       if (this.refConnected.current) return; // nếu đã connect rồi thì bỏ qua
       this.refConnected.current = true; //đánh dấu là đã connect
       if (Platform.OS == "ios") {
         this.setupCallKeep();
+        VoipPushNotification.requestPermissions();
         VoipPushNotification.addEventListener("register", (token) => {
           // send token to your apn provider server
           this.refDeviceToken.current=token;
@@ -553,6 +553,7 @@ class CallScreen extends React.Component {
         //     RNCallKeep.endCall(this.refCallId.current);
         //   }
         // });
+        VoipPushNotification.registerVoipToken();
       } else {
         CallManager.getDeviceToken&&CallManager.getDeviceToken().then(token=>{
           this.refDeviceToken.current=token;
@@ -613,7 +614,6 @@ class CallScreen extends React.Component {
         this.onAnswerReceived
       );
       this.refSocket.current.on(constants.socket_type.LEAVE, (data) => {
-        debugger;
         if (data.callId == this.refCallId.current) {
           const newState = { statusCall: true };
           if (data.status && data.code == 1 && !this.state.isAnswerSuccess) {
