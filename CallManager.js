@@ -1,10 +1,9 @@
-
-
 class CallManager {
   _defaultCall = null;
-  host="";
-  deviceId="";
-  packageName=""
+  host = "";
+  deviceId = "";
+  packageName = "";
+  firebase = null;
   DEFAULT_ICE = {
     iceServers: [
       {
@@ -17,19 +16,33 @@ class CallManager {
       },
     ],
   };
-  init(iceServer=[], socketHost, deviceId, packageName){
-    this.DEFAULT_ICE.iceServers=[...this.DEFAULT_ICE.iceServers,...iceServer];
+  init(
+    {
+      iceServer = [],
+      socketHost,
+      deviceId,
+      packageName,
+      firebase,
+      callingName,
+    } = payload || {}
+  ) {
+    this.DEFAULT_ICE.iceServers = [
+      ...this.DEFAULT_ICE.iceServers,
+      ...iceServer,
+    ];
     this.host = socketHost;
     this.deviceId = deviceId;
-    this.packageName=packageName;
+    this.packageName = packageName;
+    this.firebase = firebase;
+    this.callingName = callingName;
   }
   startCall(booking, isOffer) {
     const ref = this.getDefault();
 
     if (!!ref) {
       ref.startCall(booking, isOffer);
-    }else{
-      alert(JSON.stringify(ref))
+    } else {
+      alert(JSON.stringify(ref));
     }
   }
   register(_ref) {

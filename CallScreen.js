@@ -27,8 +27,8 @@ import Timer from "./Timer";
 import soundUtils from "./utils/sound-utils";
 import BandwidthHandler from "./BandwidthHandler";
 import stringUtils from "mainam-react-native-string-utils";
-import CallManager  from "./CallManager";
-const { width, height } = Dimensions.get("screen");
+import CallManager from "./CallManager";
+const { height } = Dimensions.get("screen");
 
 const ONE_SECOND_IN_MS = 1000;
 
@@ -60,12 +60,18 @@ class CallScreen extends React.Component {
     this.refConnected = React.createRef();
     this.refSettingCallKeep = React.createRef();
     this.refDeviceToken = React.createRef();
+    this.refCallingFrom = React.createRef();
+    this.refCallingData = React.createRef();
   }
-  renderUserInCall = () => {
-    return (
-      this.props.renderUserInCall &&
-      this.props.renderUserInCall(this.state.data)
-    );
+
+  getCallingName = () => {
+    if (this.refCallingData.current)
+      if ((this.props.userId = this.refCallingData.current.from)) {
+        return this.refCallingData.current.toName;
+      } else {
+        return this.refCallingData.current.fromName;
+      }
+    else return "";
   };
 
   render() {
@@ -131,7 +137,7 @@ class CallScreen extends React.Component {
             data={{
               mediaConnected: isAnswerSuccess,
             }}
-            renderUserInCall={this.renderUserInCall}
+            callingName={getCallingName()}
           />
           {callStatus && !isAnswerSuccess ? (
             <Text style={styles.statusCall}>{callStatus}</Text>
@@ -259,27 +265,23 @@ class CallScreen extends React.Component {
               ? constants.socket_type.ANSWER
               : constants.socket_type.OFFER,
             {
-              to: this.state.userId,
+              to: this.refCallingFrom.current,
               description: this.refPeer.current.localDescription,
               candidates: this.state.pendingCandidates,
-              booking: this.state.data,
               callId: this.refCallId.current,
               sdp: this.refOffer.current,
               from: this.props.userId,
+              data: this.refCallingData.current,
             }
           );
-          if (this.state.isOfferReceiverd) {
-            setTimeout(() => {}, 60000);
-          }
         } else {
         }
         break;
-
       default:
         break;
     }
   };
-  startCall = async (e) => {
+  startCall = async ({ from, fromName, to, toName } = {}) => {
     try {
       this.refCallId.current = stringUtils.guid();
       await this.setupWebRTC();
@@ -290,8 +292,12 @@ class CallScreen extends React.Component {
       await this.refPeer.current.setLocalDescription(this.refOffer.current);
       this.setState({
         isVisible: true,
-        userId: e.doctor.id,
-        data: e,
+        data: {
+          from,
+          fromName,
+          to,
+          toName,
+        },
         makeCall: true,
       });
     } catch (e) {}
@@ -367,12 +373,14 @@ class CallScreen extends React.Component {
   resetState = () => {
     this.refCallId.current = "";
     this.refLocalStream.current = "";
+    this.refCallingFrom.current = "";
+    this.refCallingData.current = "";
     this.setState({
       isOfferReceiverd: false,
       isOfferAnswered: false,
       isVisible: false,
-      // callId: null,
-      userId: null,
+      data: {},
+      callingName: "",
       remoteStreamURL: null,
       pendingCandidates: [],
       data: null,
@@ -409,9 +417,13 @@ class CallScreen extends React.Component {
       "didActivateAudioSession",
       this.onRNCallKitDidActivateAudioSession
     );
-    VoipPushNotification.removeEventListener('register');
+    VoipPushNotification.removeEventListener("register");
   };
-  onOfferReceived = async (data) => {
+  onOfferReceived = (data) => {
+    if (data.from == props.userId) {
+      //nếu offer nhận được được thực hiện từ chính bạn thì bỏ qua
+      return;
+    }
     this.refOffer.current = data.description;
     this.refCandidates.current = data.candidates;
     this.refCallId.current = data.callId;
@@ -419,12 +431,12 @@ class CallScreen extends React.Component {
     this.startSound();
     setTimeout(() => {
       //Chờ 500 ms trước khi hiển thị lên cuộc gọi
+      this.refCallingData.current = data.data || {};
+      this.refCallingFrom.current = data.form;
       this.setState({
         isOfferReceiverd: true,
         isOfferAnswered: false,
         isVisible: true,
-        userId: data.from,
-        data: data.booking,
       });
     }, 500);
   };
@@ -491,7 +503,7 @@ class CallScreen extends React.Component {
         ? constants.socket_type.LEAVE
         : constants.socket_type.REJECT;
     this.refSocket.current.emit(constants.socket_type.LEAVE, {
-      to: this.state.userId,
+      to: this.refCallingFrom.current,
       callId: this.refCallId.current, // this.state.callId,
       type,
     });
@@ -530,6 +542,9 @@ class CallScreen extends React.Component {
       }
     });
   };
+  onDisconnect = async (data2) => {
+    this.refConnected.current = false;
+  };
   onConnected = async (data2) => {
     try {
       if (this.refConnected.current) return; // nếu đã connect rồi thì bỏ qua
@@ -539,10 +554,10 @@ class CallScreen extends React.Component {
         VoipPushNotification.requestPermissions();
         VoipPushNotification.addEventListener("register", (token) => {
           // send token to your apn provider server
-          this.refDeviceToken.current=token;
+          this.refDeviceToken.current = token;
           this.connectToSocket(token);
         });
-        VoipPushNotification.registerVoipToken();
+        // VoipPushNotification.registerVoipToken();
         // VoipPushNotification.addEventListener('notification', notification => {
         //   // Handle incoming pushes
         //   debugger;
@@ -555,24 +570,24 @@ class CallScreen extends React.Component {
         // });
         VoipPushNotification.registerVoipToken();
       } else {
-        CallManager.getDeviceToken&&CallManager.getDeviceToken().then(token=>{
-          this.refDeviceToken.current=token;
-          this.connectToSocket(token);
-        })        
+        const token = await CallManager.firebase.messaging().getToken();
+        this.refDeviceToken.current = token;
+        this.connectToSocket(token);
       }
     } catch (error) {
-      console.log(error)
+      console.log(error);
     }
   };
-  connectToSocket = (token, platform)=>{
-    this.refSocket.current&&this.refSocket.current.emit(constants.socket_type.CONNECT, {
-      token,
-      id: this.props.userId,
-      platform: Platform.OS,
-      deviceId: CallManager.deviceId,
-      packageName: CallManager.packageName,
-    });
-  }
+  connectToSocket = (token, platform) => {
+    this.refSocket.current &&
+      this.refSocket.current.emit(constants.socket_type.CONNECT, {
+        token,
+        id: this.props.userId,
+        platform: Platform.OS,
+        deviceId: CallManager.deviceId,
+        packageName: CallManager.packageName,
+      });
+  };
   componentDidUpdate = (preProps, nextProps) => {
     if (preProps.loginToken != this.props.loginToken) {
       this.refConnected.current = false; //bỏ đánh dấu là đã connect
@@ -582,7 +597,7 @@ class CallScreen extends React.Component {
           { token: this.refDeviceToken.current, platform: Platform.OS },
           (data) => {
             this.refSocket.current.disconnect();
-            this.refSocket.current =null;
+            this.refSocket.current = null;
           }
         );
       } else {
@@ -591,8 +606,7 @@ class CallScreen extends React.Component {
     }
   };
   registerSocket = () => {
-    if(this.props.loginToken && !this.refSocket.current )
-    {
+    if (this.props.loginToken && !this.refSocket.current) {
       this.refSocket.current = this.props.io.connect(CallManager.host, {
         transports: ["websocket"],
         query: {
@@ -604,7 +618,14 @@ class CallScreen extends React.Component {
         timeout: 30000,
         rememberUpgrade: true,
       });
-      this.refSocket.current.on(constants.socket_type.CONNECT, this.onConnected);
+      this.refSocket.current.on(
+        constants.socket_type.CONNECT,
+        this.onConnected
+      );
+      this.refSocket.current.on(
+        constants.socket_type.DISCONNECT,
+        this.onDisconnect
+      );
       this.refSocket.current.on(
         constants.socket_type.OFFER,
         this.onOfferReceived

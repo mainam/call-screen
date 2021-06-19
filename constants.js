@@ -6,7 +6,7 @@ module.exports = {
       LEAVE: "LEAVE",
       REJECT: "REJECT",
       DELINE: "DELINE",
-      DISCONNECT: "DISCONNECT",
+      DISCONNECT: "disconnect",
       CONNECT: "connectFirebase",
       CHECKING: "CHECKING",
       GET_LIST_GROUP: "GET_LIST_GROUP",

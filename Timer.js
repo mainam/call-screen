@@ -1,5 +1,6 @@
 import React, { useEffect, useState, useRef } from "react";
 import { View, StyleSheet, Text } from "react-native";
+import CallManager from "./CallManager";
 import dateUtils from "mainam-react-native-date-utils";
 export default function Timer(props) {
   const WARNING_TIME = 25 * 60 * 1000;
@@ -55,7 +56,7 @@ export default function Timer(props) {
   return (
     <View>
       <Text style={styles.userId}>
-        {props.renderUserInCall && props.renderUserInCall()}
+        {props.callingName || CallManager.callingName || "iSofHCare"}
       </Text>
       {state.mediaConnected ? (
         <Text style={styles.callState}>
