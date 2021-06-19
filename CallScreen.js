@@ -66,11 +66,13 @@ class CallScreen extends React.Component {
 
   getCallingName = () => {
     if (this.refCallingData.current)
-      if ((this.props.userId = this.refCallingData.current.from)) {
+    {
+      if ((this.props.userId == this.refCallingData.current.from)) {
         return this.refCallingData.current.toName;
       } else {
         return this.refCallingData.current.fromName;
       }
+    }
     else return "";
   };
 
@@ -137,7 +139,7 @@ class CallScreen extends React.Component {
             data={{
               mediaConnected: isAnswerSuccess,
             }}
-            callingName={getCallingName()}
+            callingName={this.getCallingName()}
           />
           {callStatus && !isAnswerSuccess ? (
             <Text style={styles.statusCall}>{callStatus}</Text>
@@ -419,8 +421,8 @@ class CallScreen extends React.Component {
     );
     VoipPushNotification.removeEventListener("register");
   };
-  onOfferReceived = (data) => {
-    if (data.from == props.userId) {
+  onOfferReceived = async (data ={}) => {
+    if (data.from == this.props.userId) {
       //nếu offer nhận được được thực hiện từ chính bạn thì bỏ qua
       return;
     }
