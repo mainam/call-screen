@@ -472,7 +472,8 @@ class CallScreen extends React.Component {
       } else {
         reason = "Kết thúc cuộc gọi";
       }
-      if(this.props.onLeave&&this.props.onLeave({reason,code: data.code}))
+      this.props.onLeave&&
+        this.props.onLeave({reason,code: data.code});
       this.handleReject();
     } else {
     }
@@ -492,9 +493,9 @@ class CallScreen extends React.Component {
     this.refCallingParter.current = "";
     this.refCallingData.current = "";
     this.setState({
+      isVisible: false,
       isOfferReceiverd: false,
       isOfferAnswered: false,
-      isVisible: false,
       data: {},
       callingName: "",
       remoteStreamURL: null,
