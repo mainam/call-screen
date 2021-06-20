@@ -424,6 +424,7 @@ class CallScreen extends React.Component {
     VoipPushNotification.removeEventListener("register");
   };
   onOfferReceived = async (data ={}) => {
+    debugger;
     if (data.from == this.props.userId) {
       //nếu offer nhận được được thực hiện từ chính bạn thì bỏ qua
       return;
@@ -431,13 +432,12 @@ class CallScreen extends React.Component {
     this.refOffer.current = data.description;
     this.refCandidates.current = data.candidates;
     this.refCallId.current = data.callId;
-    this.refCallingData.current = data.data;
+    this.refCallingData.current = data.data || {};
+    this.refCallingParter.current = data.from;
     await this.setupWebRTC();
     this.startSound();
     setTimeout(() => {
       //Chờ 500 ms trước khi hiển thị lên cuộc gọi
-      this.refCallingData.current = data.data || {};
-      this.refCallingParter.current = data.from;
       this.setState({
         isOfferReceiverd: true,
         isOfferAnswered: false,
