@@ -431,12 +431,13 @@ class CallScreen extends React.Component {
     this.refOffer.current = data.description;
     this.refCandidates.current = data.candidates;
     this.refCallId.current = data.callId;
+    this.refCallingData.current = data.data;
     await this.setupWebRTC();
     this.startSound();
     setTimeout(() => {
       //Chờ 500 ms trước khi hiển thị lên cuộc gọi
       this.refCallingData.current = data.data || {};
-      this.refCallingParter.current = data.form;
+      this.refCallingParter.current = data.from;
       this.setState({
         isOfferReceiverd: true,
         isOfferAnswered: false,
@@ -582,7 +583,7 @@ class CallScreen extends React.Component {
       console.log(error);
     }
   };
-  connectToSocket = (token, platform) => {
+  connectToSocket = (token) => {
     this.refSocket.current &&
       this.refSocket.current.emit(constants.socket_type.CONNECT, {
         token,
