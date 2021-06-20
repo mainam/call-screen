@@ -141,9 +141,6 @@ class CallScreen extends React.Component {
             }}
             callingName={this.getCallingName()}
           />   */}
-          {/* {callStatus && !isAnswerSuccess ? (
-            <Text style={styles.statusCall}>{callStatus}</Text>
-          ) : null} */}
           <View
             style={{
               flex: 1,
@@ -451,7 +448,6 @@ class CallScreen extends React.Component {
         isOfferReceiverd: true,
         isOfferAnswered: false,
         isVisible: true,
-        statusCall:""
       });  
     }).catch(e=>{
     });
@@ -470,13 +466,14 @@ class CallScreen extends React.Component {
   };
   onLeave = (data = {}) => {
     if (data.callId == this.refCallId.current) {
-      const newState = { statusCall: "" };
+      let reason = "";
       if (data.status && data.code == 1 && !this.state.isAnswerSuccess) {
-        newState.callStatus = "Máy bận";
+        reason  ="Máy bận";
       } else {
-        newState.callStatus = "Kết thúc cuộc gọi";
+        reason = "Kết thúc cuộc gọi";
       }
-      this.setState({newState,...this.handleReject()});
+      if(this.props.onLeave&&this.props.onLeave({reason,code: data.code}))
+      this.handleReject();
     } else {
     }
   }
@@ -494,7 +491,7 @@ class CallScreen extends React.Component {
     this.refLocalStream.current = "";
     this.refCallingParter.current = "";
     this.refCallingData.current = "";
-    return {
+    this.setState({
       isOfferReceiverd: false,
       isOfferAnswered: false,
       isVisible: false,
@@ -510,7 +507,7 @@ class CallScreen extends React.Component {
       callStatus: null,
       isAnswerSuccess: false,
       makeCall: false,
-    }
+    });
   };
   handleAnswer = async () => {
     try {
@@ -555,7 +552,7 @@ class CallScreen extends React.Component {
       callId: this.refCallId.current, // this.state.callId,
       type,
     });
-    this.setState(this.handleReject())
+    this.handleReject();
   };
   componentWillUnmount() {
     this.removeEvent();
@@ -692,13 +689,6 @@ class CallScreen extends React.Component {
 }
 
 const styles = StyleSheet.create({
-  statusCall: {
-    color: "#FFF",
-    textAlign: "center",
-    fontSize: 16,
-    paddingBottom: 15,
-    paddingTop: 10,
-  },
   textWarning: {
     color: "#FFF",
     textAlign: "center",
