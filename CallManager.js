@@ -36,11 +36,11 @@ class CallManager {
     this.firebase = firebase;
     this.callingName = callingName;
   }
-  startCall(booking, isOffer) {
+  startCall({to, toName, from, fromName} = payload, isOffer) {
     const ref = this.getDefault();
 
     if (!!ref) {
-      ref.startCall(booking, isOffer);
+      ref.startCall({to, toName, from, fromName}, isOffer);
     } else {
       alert(JSON.stringify(ref));
     }
