@@ -222,47 +222,71 @@ class CallScreen extends React.Component {
     InCallManager.stop();
     Vibration.cancel();
   };
-  setupWebRTC = async () => {
-    const facing = isFront ? "front" : "environment";
-    const devices = await mediaDevices.enumerateDevices();
-    const videoSourceId = devices.find(
-      (device) => device.kind === "videoinput" && device.facing === facing
-    );
-    const facingMode = isFront ? "user" : "environment";
-    const constraints = {
-      audio: true,
-      video: {
-        mandatory: {
-          minWidth: 500, // Provide your own width, height and frame rate here
-          minHeight: 300,
-          minFrameRate: 30,
-        },
-        facingMode,
-        optional: videoSourceId ? [{ sourceId: videoSourceId }] : [],
-      },
-    };
-    const peer = new RTCPeerConnection(CallManager.DEFAULT_ICE);
-    peer.oniceconnectionstatechange = this.onICEConnectionStateChange;
-    peer.onaddstream = this.onAddStream;
-    peer.onicecandidate = this.onICECandiate;
-    peer.onicegatheringstatechange = this.onICEGratherStateChange;
-    const newStream = await mediaDevices.getUserMedia(constraints);
-    peer.addStream(newStream);
-    this.refLocalStream.current = newStream;
-    this.refPeer.current = peer;
-    this.setState({
-      localStreamURL: newStream.toURL(),
+  getVideoDevice = ()=>{
+    return new Promise((resolve, reject)=>{
+      const facing = isFront ? "front" : "environment";
+      try {
+        mediaDevices.enumerateDevices().then(devices=>{
+       const videoSourceId = devices.find(
+        (device) => device.kind === "videoinput" && device.facing === facing
+      );
+      if(videoSourceId)
+      resolve(videoSourceId);
+      reject(null);
+        })
+      } catch (error) {
+        console.log(error);
+        reject(error);        
+      }
+    });
+
+  }
+  setupWebRTC = () => {
+    return new Promise( (resolve,reject)=>{
+      this.getVideoDevice().then(videoSourceId=>{
+        const facingMode = isFront ? "user" : "environment";
+        const constraints = {
+          audio: true,
+          video: {
+            mandatory: {
+              minWidth: 500, // Provide your own width, height and frame rate here
+              minHeight: 300,
+              minFrameRate: 30,
+            },
+            facingMode,
+            optional: videoSourceId ? [{ sourceId: videoSourceId }] : [],
+          },
+        };
+        const peer = new RTCPeerConnection(CallManager.DEFAULT_ICE);
+        peer.oniceconnectionstatechange = this.onICEConnectionStateChange;
+        peer.onaddstream = this.onAddStream;
+        peer.onicecandidate = this.onICECandiate;
+        peer.onicegatheringstatechange = this.onICEGratherStateChange;
+        mediaDevices.getUserMedia(constraints).then(newStream=>{
+          peer.addStream(newStream);
+          this.refLocalStream.current = newStream;
+          this.refPeer.current = peer;
+          resolve(newStream.toURL());
+          // this.setState({
+          //   localStreamURL: ,
+          // });
+        }).catch(e=>{
+          reject(e)
+        });
+      }).catch(e=>{
+        reject(e)
+      })
+
+      
     });
   };
   onICEGratherStateChange = (ev) => {
-    console.log("ev: ", this.refPeer.current.iceGatheringState);
     switch (this.refPeer.current.iceGatheringState) {
       case "gathering":
         if (!this.state.makeCall) this.setState({ callStatus: "Đang kết nối" });
         break;
-      case "complete":
-        debugger;
-        if (this.state.pendingCandidates.length > 0) {
+      case "complete":        
+        if (this.state.pendingCandidates.length > 0 && this.refCallId.current) {
           this.sendMessage(
             this.state.isOfferReceiverd
               ? constants.socket_type.ANSWER
@@ -278,6 +302,7 @@ class CallScreen extends React.Component {
             }
           );
         } else {
+          //
         }
         break;
       default:
@@ -303,6 +328,7 @@ class CallScreen extends React.Component {
       this.setState({
         isVisible: true,        
         makeCall: true,
+        callStatus: ""
       });
     } catch (e) {}
   };
@@ -423,7 +449,7 @@ class CallScreen extends React.Component {
     );
     VoipPushNotification.removeEventListener("register");
   };
-  onOfferReceived = async (data ={}) => {
+  onOfferReceived = (data ={}) => {
     debugger;
     if (data.from == this.props.userId) {
       //nếu offer nhận được được thực hiện từ chính bạn thì bỏ qua
@@ -434,17 +460,19 @@ class CallScreen extends React.Component {
     this.refCallId.current = data.callId;
     this.refCallingData.current = data.data || {};
     this.refCallingParter.current = data.from;
-    await this.setupWebRTC();
-    this.startSound();
-    setTimeout(() => {
-      //Chờ 500 ms trước khi hiển thị lên cuộc gọi
+    this.setupWebRTC().then(localStreamURL=>{
+      debugger;
+      this.startSound();
       this.setState({
+        localStreamURL,
         isOfferReceiverd: true,
         isOfferAnswered: false,
         isVisible: true,
-      });
-    }, 500);
-  };
+      });  
+    }).catch(e=>{
+      debugger;
+    });
+};
 
   onAnswerReceived = async (data) => {
     debugger;
@@ -459,7 +487,6 @@ class CallScreen extends React.Component {
     );
   };
   onLeave = (data = {}) => {
-    debugger;
     if (data.callId == this.refCallId.current) {
       const newState = { statusCall: true };
       if (data.status && data.code == 1 && !this.state.isAnswerSuccess) {
