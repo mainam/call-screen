@@ -141,9 +141,9 @@ class CallScreen extends React.Component {
             }}
             callingName={this.getCallingName()}
           />   */}
-          {callStatus && !isAnswerSuccess ? (
+          {/* {callStatus && !isAnswerSuccess ? (
             <Text style={styles.statusCall}>{callStatus}</Text>
-          ) : null}
+          ) : null} */}
           <View
             style={{
               flex: 1,
@@ -407,29 +407,7 @@ class CallScreen extends React.Component {
     });
   };
 
-  resetState = () => {
-    this.refCallId.current = "";
-    this.refLocalStream.current = "";
-    this.refCallingParter.current = "";
-    this.refCallingData.current = "";
-    this.setState({
-      isOfferReceiverd: false,
-      isOfferAnswered: false,
-      isVisible: false,
-      data: {},
-      callingName: "",
-      remoteStreamURL: null,
-      pendingCandidates: [],
-      data: null,
-      localStreamURL: null,
-      isSpeak: true,
-      isMuted: false,
-      isCamFront: true,
-      callStatus: null,
-      isAnswerSuccess: false,
-      makeCall: false,
-    });
-  };
+ 
 
   onRNCallKitDidActivateAudioSession = (data) => {
     // AudioSession đã được active, có thể phát nhạc chờ nếu là outgoing call, answer call nếu là incoming call.
@@ -495,17 +473,15 @@ class CallScreen extends React.Component {
       const newState = { statusCall: "" };
       if (data.status && data.code == 1 && !this.state.isAnswerSuccess) {
         newState.callStatus = "Máy bận";
-        setTimeout(this.handleReject, 1500);
       } else {
         newState.callStatus = "Kết thúc cuộc gọi";
-        this.handleReject();
       }
-      this.setState(newState);
+      this.setState({newState,...this.handleReject()});
     } else {
     }
   }
 
-  handleReject = async () => {
+  handleReject = () => {
     if (this.refPeer.current) this.refPeer.current.close();
     soundUtils.stop();
     this.stopSound();
@@ -514,7 +490,27 @@ class CallScreen extends React.Component {
       // if (this.state.callId) {
       RNCallKeep.reportEndCallWithUUID(this.refCallId.current, 2);
     }
-    this.resetState();
+    this.refCallId.current = "";
+    this.refLocalStream.current = "";
+    this.refCallingParter.current = "";
+    this.refCallingData.current = "";
+    return {
+      isOfferReceiverd: false,
+      isOfferAnswered: false,
+      isVisible: false,
+      data: {},
+      callingName: "",
+      remoteStreamURL: null,
+      pendingCandidates: [],
+      data: null,
+      localStreamURL: null,
+      isSpeak: true,
+      isMuted: false,
+      isCamFront: true,
+      callStatus: null,
+      isAnswerSuccess: false,
+      makeCall: false,
+    }
   };
   handleAnswer = async () => {
     try {
@@ -559,7 +555,7 @@ class CallScreen extends React.Component {
       callId: this.refCallId.current, // this.state.callId,
       type,
     });
-    this.handleReject();
+    this.setState(this.handleReject())
   };
   componentWillUnmount() {
     this.removeEvent();
