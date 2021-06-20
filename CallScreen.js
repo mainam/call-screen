@@ -23,7 +23,7 @@ import InCallManager from "react-native-incall-manager";
 import constants from "./constants";
 import VoipPushNotification from "react-native-voip-push-notification";
 import RNCallKeep from "react-native-callkeep";
-import Timer from "./Timer";
+// import Timer from "./Timer";
 import soundUtils from "./utils/sound-utils";
 import BandwidthHandler from "./BandwidthHandler";
 import stringUtils from "mainam-react-native-string-utils";
@@ -60,7 +60,7 @@ class CallScreen extends React.Component {
     this.refConnected = React.createRef();
     this.refSettingCallKeep = React.createRef();
     this.refDeviceToken = React.createRef();
-    this.refCallingFrom = React.createRef();
+    this.refCallingParter = React.createRef();
     this.refCallingData = React.createRef();
   }
 
@@ -135,12 +135,12 @@ class CallScreen extends React.Component {
               />
             </TouchableOpacity>
           </View>
-          <Timer
+          {/* <Timer
             data={{
               mediaConnected: isAnswerSuccess,
             }}
             callingName={this.getCallingName()}
-          />
+          />   */}
           {callStatus && !isAnswerSuccess ? (
             <Text style={styles.statusCall}>{callStatus}</Text>
           ) : null}
@@ -261,13 +261,14 @@ class CallScreen extends React.Component {
         if (!this.state.makeCall) this.setState({ callStatus: "Đang kết nối" });
         break;
       case "complete":
+        debugger;
         if (this.state.pendingCandidates.length > 0) {
           this.sendMessage(
             this.state.isOfferReceiverd
               ? constants.socket_type.ANSWER
               : constants.socket_type.OFFER,
             {
-              to: this.refCallingFrom.current,
+              to: this.refCallingParter.current,
               description: this.refPeer.current.localDescription,
               candidates: this.state.pendingCandidates,
               callId: this.refCallId.current,
@@ -286,6 +287,13 @@ class CallScreen extends React.Component {
   startCall = async ({ from, fromName, to, toName } = {}) => {
     try {
       this.refCallId.current = stringUtils.guid();
+      this.refCallingData.current={
+        from,
+        fromName,
+        to,
+        toName,
+      },
+      this.refCallingParter.current=to;
       await this.setupWebRTC();
       InCallManager.start({ media: "video" });
       soundUtils.play("call_phone.mp3");
@@ -293,13 +301,7 @@ class CallScreen extends React.Component {
       this.refOffer.current = await this.refPeer.current.createOffer();
       await this.refPeer.current.setLocalDescription(this.refOffer.current);
       this.setState({
-        isVisible: true,
-        data: {
-          from,
-          fromName,
-          to,
-          toName,
-        },
+        isVisible: true,        
         makeCall: true,
       });
     } catch (e) {}
@@ -375,7 +377,7 @@ class CallScreen extends React.Component {
   resetState = () => {
     this.refCallId.current = "";
     this.refLocalStream.current = "";
-    this.refCallingFrom.current = "";
+    this.refCallingParter.current = "";
     this.refCallingData.current = "";
     this.setState({
       isOfferReceiverd: false,
@@ -434,7 +436,7 @@ class CallScreen extends React.Component {
     setTimeout(() => {
       //Chờ 500 ms trước khi hiển thị lên cuộc gọi
       this.refCallingData.current = data.data || {};
-      this.refCallingFrom.current = data.form;
+      this.refCallingParter.current = data.form;
       this.setState({
         isOfferReceiverd: true,
         isOfferAnswered: false,
@@ -505,7 +507,7 @@ class CallScreen extends React.Component {
         ? constants.socket_type.LEAVE
         : constants.socket_type.REJECT;
     this.refSocket.current.emit(constants.socket_type.LEAVE, {
-      to: this.refCallingFrom.current,
+      to: this.refCallingParter.current,
       callId: this.refCallId.current, // this.state.callId,
       type,
     });
