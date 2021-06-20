@@ -26,6 +26,11 @@ class CallManager {
       callingName,
     } = payload || {}
   ) {
+    if(this.hasInited){
+      console.log("CallManager inited");
+      return;
+    }
+    this.hasInited =true;
     this.DEFAULT_ICE.iceServers = [
       ...this.DEFAULT_ICE.iceServers,
       ...iceServer,
@@ -36,11 +41,11 @@ class CallManager {
     this.firebase = firebase;
     this.callingName = callingName;
   }
-  startCall({to, toName, from, fromName} = payload, isOffer) {
+  startCall(booking, isOffer) {
     const ref = this.getDefault();
 
     if (!!ref) {
-      ref.startCall({to, toName, from, fromName}, isOffer);
+      ref.startCall(booking, isOffer);
     } else {
       alert(JSON.stringify(ref));
     }
