@@ -447,6 +447,7 @@ class CallScreen extends React.Component {
   };
 
   onAnswerReceived = async (data) => {
+    debugger;
     soundUtils.stop();
     const { description, candidates } = data;
     description.sdp = BandwidthHandler.getSdp(description.sdp);
@@ -457,6 +458,21 @@ class CallScreen extends React.Component {
       this.refPeer.current.addIceCandidate(new RTCIceCandidate(c))
     );
   };
+  onLeave = (data = {}) => {
+    debugger;
+    if (data.callId == this.refCallId.current) {
+      const newState = { statusCall: true };
+      if (data.status && data.code == 1 && !this.state.isAnswerSuccess) {
+        newState.callStatus = "Máy bận";
+        setTimeout(this.handleReject, 1500);
+      } else {
+        newState.callStatus = "Kết thúc cuộc gọi";
+        this.handleReject();
+      }
+      this.setState(newState);
+    } else {
+    }
+  }
 
   handleReject = async () => {
     if (this.refPeer.current) this.refPeer.current.close();
@@ -639,20 +655,7 @@ class CallScreen extends React.Component {
         constants.socket_type.ANSWER,
         this.onAnswerReceived
       );
-      this.refSocket.current.on(constants.socket_type.LEAVE, (data) => {
-        if (data.callId == this.refCallId.current) {
-          const newState = { statusCall: true };
-          if (data.status && data.code == 1 && !this.state.isAnswerSuccess) {
-            newState.callStatus = "Máy bận";
-            setTimeout(this.handleReject, 1500);
-          } else {
-            newState.callStatus = "Kết thúc cuộc gọi";
-            this.handleReject();
-          }
-          this.setState(newState);
-        } else {
-        }
-      });
+      this.refSocket.current.on(constants.socket_type.LEAVE, this.onLeave);
       this.refSocket.current.connect();
     }
   };
