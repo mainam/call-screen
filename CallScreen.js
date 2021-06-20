@@ -319,18 +319,25 @@ class CallScreen extends React.Component {
         toName,
       },
       this.refCallingParter.current=to;
-      await this.setupWebRTC();
-      InCallManager.start({ media: "video" });
-      soundUtils.play("call_phone.mp3");
-      // Create Offer
-      this.refOffer.current = await this.refPeer.current.createOffer();
-      await this.refPeer.current.setLocalDescription(this.refOffer.current);
-      this.setState({
-        isVisible: true,        
-        makeCall: true,
-        callStatus: ""
+      this.setupWebRTC().then(async localStreamURL=>{
+        this.refPeer.current.createOffer().then(offer=>{
+          this.refOffer.current=offer;
+          this.refPeer.current.setLocalDescription(offer).then(s=>{
+            InCallManager.start({ media: "video" });
+            soundUtils.play("call_phone.mp3");
+            this.setState({
+              isVisible: true,        
+              makeCall: true,
+              callStatus: "",
+              localStreamURL
+            });  
+          })
+        })  
       });
-    } catch (e) {}
+      
+      
+      // Create Offer
+     } catch (e) {}
   };
   onSwitchCamera = async () => {
     if (this.refLocalStream.current) {
@@ -450,7 +457,6 @@ class CallScreen extends React.Component {
     VoipPushNotification.removeEventListener("register");
   };
   onOfferReceived = (data ={}) => {
-    debugger;
     if (data.from == this.props.userId) {
       //nếu offer nhận được được thực hiện từ chính bạn thì bỏ qua
       return;
@@ -461,21 +467,19 @@ class CallScreen extends React.Component {
     this.refCallingData.current = data.data || {};
     this.refCallingParter.current = data.from;
     this.setupWebRTC().then(localStreamURL=>{
-      debugger;
       this.startSound();
       this.setState({
         localStreamURL,
         isOfferReceiverd: true,
         isOfferAnswered: false,
         isVisible: true,
+        statusCall:""
       });  
     }).catch(e=>{
-      debugger;
     });
 };
 
   onAnswerReceived = async (data) => {
-    debugger;
     soundUtils.stop();
     const { description, candidates } = data;
     description.sdp = BandwidthHandler.getSdp(description.sdp);
@@ -488,7 +492,7 @@ class CallScreen extends React.Component {
   };
   onLeave = (data = {}) => {
     if (data.callId == this.refCallId.current) {
-      const newState = { statusCall: true };
+      const newState = { statusCall: "" };
       if (data.status && data.code == 1 && !this.state.isAnswerSuccess) {
         newState.callStatus = "Máy bận";
         setTimeout(this.handleReject, 1500);
@@ -608,7 +612,6 @@ class CallScreen extends React.Component {
         // VoipPushNotification.registerVoipToken();
         // VoipPushNotification.addEventListener('notification', notification => {
         //   // Handle incoming pushes
-        //   debugger;
         //   if (!this.refCallId.current) {
         //     this.refCallId.current = notification.getData().data.UUID;
         //   } else {
