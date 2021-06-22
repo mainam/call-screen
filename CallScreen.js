@@ -45,7 +45,7 @@ class CallScreen extends React.Component {
 
     this.state = {
       pendingCandidates: [],
-      isCamFront: true,
+      // isCamFront: true,
       isVisible: false,
       isAnswerSuccess: false,
       makeCall: false,
@@ -83,7 +83,7 @@ class CallScreen extends React.Component {
       isAnswerSuccess,
       isVisible,
       makeCall,
-      isCamFront,
+      // isCamFront,
       isSpeak,
       isOfferReceiverd,
       isMuted,
@@ -115,12 +115,14 @@ class CallScreen extends React.Component {
           </View>
 
           {/* {localPC.current ? <BandWidth localPc={localPC.current} /> : null} */}
+          {
+            this.refLocalStream.current && (makeCall || isAnswerSuccess) && this.state.isCameraReady?
           <View style={[styles.groupLocalSteam]}>
             {this.refLocalStream.current && (
               <RTCView
                 style={[styles.rtc]}
                 zOrder={1}
-                mirror={isCamFront}
+                // mirror={isCamFront}
                 streamURL={this.refLocalStream.current.toURL()}
               />
             )}
@@ -134,6 +136,7 @@ class CallScreen extends React.Component {
               />
             </TouchableOpacity>
           </View>
+          :null}
           {/* <Timer
             data={{
               mediaConnected: isAnswerSuccess,
@@ -319,9 +322,11 @@ class CallScreen extends React.Component {
           this.refOffer.current=offer;
           this.refPeer.current.setLocalDescription(offer).then(s=>{
             InCallManager.start({ media: "video" });
+            if(Platform.OS=="android")
             soundUtils.play("call_phone.mp3");
             this.setState({
-              isVisible: true,        
+              isVisible: true,   
+              isCameraReady: true,     
               makeCall: true,
               callStatus: ""
             });  
@@ -333,13 +338,13 @@ class CallScreen extends React.Component {
       // Create Offer
      } catch (e) {}
   };
-  onSwitchCamera = async () => {
+  onSwitchCamera = () => {
     if (this.refLocalStream.current) {
       
       this.refLocalStream.current
         .getVideoTracks()
         .forEach((track) => track._switchCamera());
-      this.setState({ isCamFront: !this.state.isCamFront });
+      // this.setState({ isCamFront: !this.state.isCamFront });
     }
   };
   onTimeOut = () => {
@@ -442,7 +447,8 @@ class CallScreen extends React.Component {
     this.refCallingData.current = data.data || {};
     this.refCallingParter.current = data.from;
     this.setupWebRTC().then(localStreamURL=>{
-      this.startSound();
+      if(Platform.OS=="android")
+        this.startSound();
       this.setState({
         isOfferReceiverd: true,
         isOfferAnswered: false,
@@ -453,6 +459,7 @@ class CallScreen extends React.Component {
 };
 
   onAnswerReceived = async (data) => {
+    if(Platform.OS=="android")
     soundUtils.stop();
     const { description, candidates } = data;
     description.sdp = BandwidthHandler.getSdp(description.sdp);
@@ -484,7 +491,6 @@ class CallScreen extends React.Component {
     this.stopSound();
     if (this.timeout) clearTimeout(this.timeout);
     if (this.refCallId.current) {
-      // if (this.state.callId) {
       RNCallKeep.reportEndCallWithUUID(this.refCallId.current, 2);
     }
     this.refCallId.current = null;
@@ -502,20 +508,25 @@ class CallScreen extends React.Component {
       data: null,
       isSpeak: true,
       isMuted: false,
-      isCamFront: true,
+      // isCamFront: true,
       callStatus: null,
       isAnswerSuccess: false,
       makeCall: false,
+      isCameraReady: false
     });
   };
   handleAnswer = async () => {
-    try {
+    try {  
+      this.stopSound();
+      InCallManager.stopRingtone();
+      Vibration.cancel();
+        if(this.refCallId.current)
+          RNCallKeep.reportEndCallWithUUID(this.refCallId.current, 2);
+      
       await this.refPeer.current.setRemoteDescription(
         new RTCSessionDescription(this.refOffer.current)
       );
-      InCallManager.stopRingtone();
       InCallManager.start({ media: "video" });
-      Vibration.cancel();
       if (Array.isArray(this.refCandidates.current)) {
         this.refCandidates.current.forEach((c) =>
           this.refPeer.current.addIceCandidate(new RTCIceCandidate(c))
@@ -526,6 +537,14 @@ class CallScreen extends React.Component {
       this.setState({
         isOfferAnswered: true,
       });
+      setTimeout(() => {
+        this.onSwitchCamera();
+        this.onSwitchCamera();
+        this.setState({
+          isCameraReady: true
+        })
+      }, 2000);
+
     } catch (error) {}
   };
 
@@ -542,6 +561,13 @@ class CallScreen extends React.Component {
   };
 
   rejectCall = () => {
+    if(Platform.OS=="ios")
+    {
+    if (this.refCallId.current) {
+      // if (this.state.callId) {
+      RNCallKeep.reportEndCallWithUUID(this.refCallId.current, 2);
+    }
+    }
     let type =
       this.state.isAnswerSuccess || this.state.makeCall
         ? constants.socket_type.LEAVE
