@@ -84,7 +84,6 @@ class CallScreen extends React.Component {
       isVisible,
       makeCall,
       isCamFront,
-      localStreamURL,
       isSpeak,
       isOfferReceiverd,
       isMuted,
@@ -117,12 +116,12 @@ class CallScreen extends React.Component {
 
           {/* {localPC.current ? <BandWidth localPc={localPC.current} /> : null} */}
           <View style={[styles.groupLocalSteam]}>
-            {localStreamURL && (
+            {this.refLocalStream.current && (
               <RTCView
                 style={[styles.rtc]}
                 zOrder={1}
                 mirror={isCamFront}
-                streamURL={localStreamURL}
+                streamURL={this.refLocalStream.current.toURL()}
               />
             )}
             <TouchableOpacity
@@ -147,7 +146,7 @@ class CallScreen extends React.Component {
               justifyContent: "flex-end",
             }}
           >
-            {localStreamURL && (makeCall || isAnswerSuccess) && (
+            {this.refLocalStream.current && (makeCall || isAnswerSuccess) && (
               <View style={styles.toggleButtons}>
                 <TouchableOpacity
                   onPress={this.onToggleMute}
@@ -264,9 +263,6 @@ class CallScreen extends React.Component {
           this.refLocalStream.current = newStream;
           this.refPeer.current = peer;
           resolve(newStream.toURL());
-          // this.setState({
-          //   localStreamURL: ,
-          // });
         }).catch(e=>{
           reject(e)
         });
@@ -278,12 +274,14 @@ class CallScreen extends React.Component {
     });
   };
   onICEGratherStateChange = (ev) => {
+    debugger;
     switch (this.refPeer.current.iceGatheringState) {
       case "gathering":
         if (!this.state.makeCall) this.setState({ callStatus: "Đang kết nối" });
         break;
       case "complete":        
         if (this.state.pendingCandidates.length > 0 && this.refCallId.current) {
+          debugger;
           this.sendMessage(
             this.state.isOfferReceiverd
               ? constants.socket_type.ANSWER
@@ -316,7 +314,7 @@ class CallScreen extends React.Component {
         toName,
       },
       this.refCallingParter.current=to;
-      this.setupWebRTC().then(async localStreamURL=>{
+      this.setupWebRTC().then(localStreamURL=>{
         this.refPeer.current.createOffer().then(offer=>{
           this.refOffer.current=offer;
           this.refPeer.current.setLocalDescription(offer).then(s=>{
@@ -325,8 +323,7 @@ class CallScreen extends React.Component {
             this.setState({
               isVisible: true,        
               makeCall: true,
-              callStatus: "",
-              localStreamURL
+              callStatus: ""
             });  
           })
         })  
@@ -338,6 +335,7 @@ class CallScreen extends React.Component {
   };
   onSwitchCamera = async () => {
     if (this.refLocalStream.current) {
+      
       this.refLocalStream.current
         .getVideoTracks()
         .forEach((track) => track._switchCamera());
@@ -410,7 +408,9 @@ class CallScreen extends React.Component {
     // AudioSession đã được active, có thể phát nhạc chờ nếu là outgoing call, answer call nếu là incoming call.
     this.handleAnswer();
   };
-  answerCallEvent = () => {};
+  answerCallEvent = (callUUid) => {
+    this.handleAnswer();
+  };
   endCallEvent = ({ callUUid }) => {
     if (!this.state.isAnswerSuccess) this.rejectCall();
   };
@@ -444,7 +444,6 @@ class CallScreen extends React.Component {
     this.setupWebRTC().then(localStreamURL=>{
       this.startSound();
       this.setState({
-        localStreamURL,
         isOfferReceiverd: true,
         isOfferAnswered: false,
         isVisible: true,
@@ -488,10 +487,10 @@ class CallScreen extends React.Component {
       // if (this.state.callId) {
       RNCallKeep.reportEndCallWithUUID(this.refCallId.current, 2);
     }
-    this.refCallId.current = "";
-    this.refLocalStream.current = "";
-    this.refCallingParter.current = "";
-    this.refCallingData.current = "";
+    this.refCallId.current = null;
+    this.refLocalStream.current = null;
+    this.refCallingParter.current = null;
+    this.refCallingData.current = null;
     this.setState({
       isVisible: false,
       isOfferReceiverd: false,
@@ -501,7 +500,6 @@ class CallScreen extends React.Component {
       remoteStreamURL: null,
       pendingCandidates: [],
       data: null,
-      localStreamURL: null,
       isSpeak: true,
       isMuted: false,
       isCamFront: true,
