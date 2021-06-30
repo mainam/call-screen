@@ -440,6 +440,20 @@ class CallScreen extends React.Component {
     VoipPushNotification.removeEventListener("register");
   };
   onOfferReceived = (data ={}) => {
+    if(this.refCallId.current) //Nếu đang trong cuộc gọi thì kêt thúc cuộc gọi
+    {
+      console.log("reject-call",data.callId)
+      RNCallKeep.reportEndCallWithUUID(data.callId, 2);
+
+      if (data.callId && VideoCallModule.reject) { 
+        VideoCallModule.reject(data.callId);
+      }
+      this.refSocket.current.emit(constants.socket_type.LEAVE, {
+        to: data.from,
+        callId: data.callId, // this.state.callId,
+        type: constants.socket_type.REJECT,
+      });
+    }
     if (data.from == this.props.userId || this.refIgnoreCallIds.current.includes(data.callId)) {
       //nếu offer nhận được được thực hiện từ chính bạn thì bỏ qua
       return;
