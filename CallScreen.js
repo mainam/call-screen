@@ -65,6 +65,8 @@ class CallScreen extends React.Component {
     this.refDeviceToken = React.createRef();
     this.refCallingParter = React.createRef();
     this.refCallingData = React.createRef();
+    this.refIgnoreCallIds = React.createRef();
+    this.refIgnoreCallIds.current = [];
   }
 
   getCallingName = () => {
@@ -280,14 +282,12 @@ class CallScreen extends React.Component {
     });
   };
   onICEGratherStateChange = (ev) => {
-    debugger;
     switch (this.refPeer.current.iceGatheringState) {
       case "gathering":
         if (!this.state.makeCall) this.setState({ callStatus: "Đang kết nối" });
         break;
       case "complete":        
         if (this.state.pendingCandidates.length > 0 && this.refCallId.current) {
-          debugger;
           this.sendMessage(
             this.state.isOfferReceiverd
               ? constants.socket_type.ANSWER
@@ -440,7 +440,7 @@ class CallScreen extends React.Component {
     VoipPushNotification.removeEventListener("register");
   };
   onOfferReceived = (data ={}) => {
-    if (data.from == this.props.userId) {
+    if (data.from == this.props.userId || this.refIgnoreCallIds.current.includes(data.callId)) {
       //nếu offer nhận được được thực hiện từ chính bạn thì bỏ qua
       return;
     }
@@ -459,7 +459,7 @@ class CallScreen extends React.Component {
       });  
     }).catch(e=>{
     });
-};
+  };
 
   onAnswerReceived = async (data) => {
     if(Platform.OS=="android")
@@ -475,6 +475,12 @@ class CallScreen extends React.Component {
 
   };
   onLeave = (data = {}) => {
+    this.refIgnoreCallIds.current.push(data.callId);
+    if(this.refIgnoreCallIds.current.length>10)
+    {
+      this.refIgnoreCallIds.current.shift();
+    }
+    
     if (data.callId == this.refCallId.current) {
       let reason = "";
       if (data.status && data.code == 1 && !this.state.isAnswerSuccess) {
