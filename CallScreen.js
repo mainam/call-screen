@@ -17,17 +17,20 @@ import {
   StatusBar,
   Image,
   Modal,
-  Vibration,
+  Vibration
 } from "react-native";
 import InCallManager from "react-native-incall-manager";
 import constants from "./constants";
 import VoipPushNotification from "react-native-voip-push-notification";
 import RNCallKeep from "react-native-callkeep";
-// import Timer from "./Timer";
+import Timer from "./Timer";
 import soundUtils from "./utils/sound-utils";
 import BandwidthHandler from "./BandwidthHandler";
 import stringUtils from "mainam-react-native-string-utils";
 import CallManager from "./CallManager";
+import {NativeModules} from 'react-native';
+const {VideoCallModule} = NativeModules;
+
 const { height } = Dimensions.get("screen");
 
 const ONE_SECOND_IN_MS = 1000;
@@ -137,12 +140,12 @@ class CallScreen extends React.Component {
             </TouchableOpacity>
           </View>
           :null}
-          {/* <Timer
+          <Timer
             data={{
               mediaConnected: isAnswerSuccess,
             }}
             callingName={this.getCallingName()}
-          />   */}
+          />  
           <View
             style={{
               flex: 1,
@@ -469,6 +472,7 @@ class CallScreen extends React.Component {
     candidates.forEach((c) =>
       this.refPeer.current.addIceCandidate(new RTCIceCandidate(c))
     );
+
   };
   onLeave = (data = {}) => {
     if (data.callId == this.refCallId.current) {
@@ -478,14 +482,19 @@ class CallScreen extends React.Component {
       } else {
         reason = "Kết thúc cuộc gọi";
       }
-      this.props.onLeave&&
-        this.props.onLeave({reason,code: data.code});
       this.handleReject();
-    } else {
+      this.props.onLeave&&
+        this.props.onLeave({callId: this.refCallId.current, reason,code: data.code});
     }
+    if (data.callId && VideoCallModule.reject) {
+      VideoCallModule.reject(data.callId);
+    }    
   }
 
   handleReject = () => {
+    if (this.refCallId.current && VideoCallModule.reject) {
+      VideoCallModule.reject(this.refCallId.current);
+    }
     if (this.refPeer.current) this.refPeer.current.close();
     soundUtils.stop();
     this.stopSound();
@@ -517,11 +526,14 @@ class CallScreen extends React.Component {
   };
   handleAnswer = async () => {
     try {  
+      if (this.refCallId.current && VideoCallModule.reject) {
+        VideoCallModule.reject(this.refCallId.current);
+      }
       this.stopSound();
       InCallManager.stopRingtone();
       Vibration.cancel();
-        if(this.refCallId.current)
-          RNCallKeep.reportEndCallWithUUID(this.refCallId.current, 2);
+      if(this.refCallId.current)
+        RNCallKeep.reportEndCallWithUUID(this.refCallId.current, 2);
       
       await this.refPeer.current.setRemoteDescription(
         new RTCSessionDescription(this.refOffer.current)
@@ -561,12 +573,14 @@ class CallScreen extends React.Component {
   };
 
   rejectCall = () => {
+    this.props.onLeave&&this.props.onLeave({callId: this.refCallId.current});
+
     if(Platform.OS=="ios")
     {
-    if (this.refCallId.current) {
-      // if (this.state.callId) {
-      RNCallKeep.reportEndCallWithUUID(this.refCallId.current, 2);
-    }
+      if (this.refCallId.current) {
+        // if (this.state.callId) {
+        RNCallKeep.reportEndCallWithUUID(this.refCallId.current, 2);
+      }
     }
     let type =
       this.state.isAnswerSuccess || this.state.makeCall

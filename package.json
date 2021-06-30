@@ -1,6 +1,6 @@
 {
   "name": "mainam-react-native-webrtc-call-screen",
-  "version": "1.0.2",
+  "version": "1.0.3",
   "description": "",
   "main": "index.js",
   "scripts": {
@@ -17,7 +17,6 @@
   },
   "homepage": "https://github.com/mainam/call-screen#readme",
   "dependencies": {
-    "mainam-react-native-date-utils": "^2.0.9",
-    "react": "16.12.0"
+    "mainam-react-native-date-utils": "^2.0.9"
   }
 }
