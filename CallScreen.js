@@ -17,7 +17,8 @@ import {
   StatusBar,
   Image,
   Modal,
-  Vibration
+  Vibration,
+  AppState
 } from "react-native";
 import InCallManager from "react-native-incall-manager";
 import constants from "./constants";
@@ -67,7 +68,23 @@ class CallScreen extends React.Component {
     this.refCallingData = React.createRef();
     this.refIgnoreCallIds = React.createRef();
     this.refIgnoreCallIds.current = [];
+    this.appState =  React.createRef();
+    this.appState.current = AppState.currentState;
   }
+
+  handleAppStateChange = (nextAppState) => {
+    if (
+      this.appState.current.match(/inactive|background/) &&
+      nextAppState === "active"
+    ) {
+      console.log("App has come to the foreground!");
+    }
+
+    this.appState.current = nextAppState;
+    // this.setState({
+    //   appState: appState.current
+    // })
+  };
 
   getCallingName = () => {
     if (this.refCallingData.current)
@@ -193,7 +210,7 @@ class CallScreen extends React.Component {
             <View style={styles.toggleButtons}>
               {isOfferReceiverd && !isAnswerSuccess ? (
                 <TouchableOpacity
-                  onPress={this.handleAnswer}
+                  onPress={this.onAnswer(false)}
                   style={{ padding: 10 }}
                 >
                   <Image
@@ -203,7 +220,7 @@ class CallScreen extends React.Component {
                 </TouchableOpacity>
               ) : null}
               <TouchableOpacity
-                onPress={this.rejectCall}
+                onPress={this.onReject}
                 style={{ padding: 10 }}
               >
                 <Image
@@ -313,6 +330,7 @@ class CallScreen extends React.Component {
   startCall = async ({ from, fromName, to, toName } = {}) => {
     try {
       this.refCallId.current = stringUtils.guid();
+      console.log(this.refCallId.current)
       this.refCallingData.current={
         from,
         fromName,
@@ -352,7 +370,7 @@ class CallScreen extends React.Component {
   };
   onTimeOut = () => {
     this.timeout = setTimeout(() => {
-      this.rejectCall();
+      this.onReject();
     }, 30 * 60 * 1000);
   };
 
@@ -382,7 +400,7 @@ class CallScreen extends React.Component {
       case "disconnected":
         break;
       case "failed":
-        // this.rejectCall()
+        // this.onReject()
         break;
     }
     this.setState(newState);
@@ -412,31 +430,28 @@ class CallScreen extends React.Component {
 
  
 
-  onRNCallKitDidActivateAudioSession = (data) => {
-    // AudioSession đã được active, có thể phát nhạc chờ nếu là outgoing call, answer call nếu là incoming call.
-    this.handleAnswer();
+  // onRNCallKitDidActivateAudioSession = (data) => {
+  //   // AudioSession đã được active, có thể phát nhạc chờ nếu là outgoing call, answer call nếu là incoming call.
+  //   this.onAnswer(true)();
+  // };
+  onCallKeepAnswer = (callUUid) => {
+    // debugger
+    if(this.appState.current.match(/inactive|background/))
+    {
+      alert("Nhấn Ok để quay lại cuộc gọi"); 
+    }
+    this.onAnswer(true)();
   };
-  answerCallEvent = (callUUid) => {
-    this.handleAnswer();
-  };
-  endCallEvent = ({ callUUid }) => {
-    if (!this.state.isAnswerSuccess) this.rejectCall();
+  onCallKeepEndCall = ({ callUUid }) => {
+    if (!this.state.isAnswerSuccess) this.onReject();
   };
   addEventCallKeep = () => {
-    RNCallKeep.addEventListener("answerCall", this.answerCallEvent);
-    RNCallKeep.addEventListener("endCall", this.endCallEvent);
-    RNCallKeep.addEventListener(
-      "didActivateAudioSession",
-      this.onRNCallKitDidActivateAudioSession
-    );
+    RNCallKeep.addEventListener("answerCall", this.onCallKeepAnswer);
+    RNCallKeep.addEventListener("endCall", this.onCallKeepEndCall);
   };
   removeEvent = () => {
-    RNCallKeep.removeEventListener("answerCall", this.answerCallEvent);
-    RNCallKeep.removeEventListener("endCall", this.endCallEvent);
-    RNCallKeep.removeEventListener(
-      "didActivateAudioSession",
-      this.onRNCallKitDidActivateAudioSession
-    );
+    RNCallKeep.removeEventListener("answerCall", this.onCallKeepAnswer);
+    RNCallKeep.removeEventListener("endCall", this.onCallKeepEndCall);
     VoipPushNotification.removeEventListener("register");
   };
   onOfferReceived = (data ={}) => {
@@ -453,6 +468,7 @@ class CallScreen extends React.Component {
         callId: data.callId, // this.state.callId,
         type: constants.socket_type.REJECT,
       });
+      return;
     }
     if (data.from == this.props.userId || this.refIgnoreCallIds.current.includes(data.callId)) {
       //nếu offer nhận được được thực hiện từ chính bạn thì bỏ qua
@@ -511,6 +527,44 @@ class CallScreen extends React.Component {
     }    
   }
 
+  onAnswer =  (fromCallKeep) => async ()=>{
+    try {  
+      if (this.refCallId.current && VideoCallModule.reject) {
+        VideoCallModule.reject(this.refCallId.current);
+      }
+      this.stopSound();
+      InCallManager.stopRingtone();
+      Vibration.cancel();
+      if(this.refCallId.current && !fromCallKeep)
+      {
+        RNCallKeep.reportEndCallWithUUID(this.refCallId.current, 2);
+      }
+      
+      await this.refPeer.current.setRemoteDescription(
+        new RTCSessionDescription(this.refOffer.current)
+      );
+      InCallManager.start({ media: "video" });
+      if (Array.isArray(this.refCandidates.current)) {
+        this.refCandidates.current.forEach((c) =>
+          this.refPeer.current.addIceCandidate(new RTCIceCandidate(c))
+        );
+      }
+      const answer = await this.refPeer.current.createAnswer();
+      await this.refPeer.current.setLocalDescription(answer);
+      this.setState({
+        isOfferAnswered: true,
+      });
+      setTimeout(() => {
+        this.onSwitchCamera();
+        this.onSwitchCamera();
+        this.setState({
+          isCameraReady: true
+        })
+      }, 2000);
+
+    } catch (error) {}
+  };
+
   handleReject = () => {
     if (this.refCallId.current && VideoCallModule.reject) {
       VideoCallModule.reject(this.refCallId.current);
@@ -544,41 +598,6 @@ class CallScreen extends React.Component {
       isCameraReady: false
     });
   };
-  handleAnswer = async () => {
-    try {  
-      if (this.refCallId.current && VideoCallModule.reject) {
-        VideoCallModule.reject(this.refCallId.current);
-      }
-      this.stopSound();
-      InCallManager.stopRingtone();
-      Vibration.cancel();
-      if(this.refCallId.current)
-        RNCallKeep.reportEndCallWithUUID(this.refCallId.current, 2);
-      
-      await this.refPeer.current.setRemoteDescription(
-        new RTCSessionDescription(this.refOffer.current)
-      );
-      InCallManager.start({ media: "video" });
-      if (Array.isArray(this.refCandidates.current)) {
-        this.refCandidates.current.forEach((c) =>
-          this.refPeer.current.addIceCandidate(new RTCIceCandidate(c))
-        );
-      }
-      const answer = await this.refPeer.current.createAnswer();
-      await this.refPeer.current.setLocalDescription(answer);
-      this.setState({
-        isOfferAnswered: true,
-      });
-      setTimeout(() => {
-        this.onSwitchCamera();
-        this.onSwitchCamera();
-        this.setState({
-          isCameraReady: true
-        })
-      }, 2000);
-
-    } catch (error) {}
-  };
 
   sendMessage = (type, msgObj) => {
     if (this.refSocket.current) {
@@ -592,7 +611,7 @@ class CallScreen extends React.Component {
     }
   };
 
-  rejectCall = () => {
+  onReject = () => {
     this.props.onLeave&&this.props.onLeave({callId: this.refCallId.current});
 
     if(Platform.OS=="ios")
@@ -615,6 +634,7 @@ class CallScreen extends React.Component {
   };
   componentWillUnmount() {
     this.removeEvent();
+    AppState.removeEventListener("change", this.handleAppStateChange);
   }
   setupCallKeep = () => {
     return new Promise((resolve, reject) => {
@@ -649,7 +669,7 @@ class CallScreen extends React.Component {
   onDisconnect = async (data2) => {
     this.refConnected.current = false;
   };
-  onConnected = async (data2) => {
+  onSocketConnected = async (data2) => {
     try {
       if (this.refConnected.current) return; // nếu đã connect rồi thì bỏ qua
       this.refConnected.current = true; //đánh dấu là đã connect
@@ -723,7 +743,7 @@ class CallScreen extends React.Component {
       });
       this.refSocket.current.on(
         constants.socket_type.CONNECT,
-        this.onConnected
+        this.onSocketConnected
       );
       this.refSocket.current.on(
         constants.socket_type.DISCONNECT,
@@ -744,6 +764,7 @@ class CallScreen extends React.Component {
   componentDidMount() {
     this.addEventCallKeep();
     this.registerSocket();
+    AppState.addEventListener("change", this.handleAppStateChange);
   }
 }
 
