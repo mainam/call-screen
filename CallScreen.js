@@ -225,17 +225,18 @@ const CallScreen = (props,ref) => {
         toName,
       }),
         (refCallingParter.current = to);
-      setupWebRTC().then(localStreamURL => {
-        refPeer.current.createOffer().then(offer => {
-          refOffer.current = offer;
-          refPeer.current.setLocalDescription(offer).then(s => {
-            InCallManager.start({media: 'video'});
-            if (Platform.OS == 'android') soundUtils.play('call_phone.mp3');
-            refMakeCall.current=false;
-            setVisible(true);
+        setupWebRTC().then(localStreamURL => {
+          refPeer.current.createOffer().then(offer => {
+            refOffer.current = offer;
+            refPeer.current.setLocalDescription(offer).then(s => {
+              // InCallManager.start({media: 'audio', ringback: '_BUNDLE_'});
+              soundUtils.play('call_phone.mp3'); //bật âm thanh đang chờ bắt mày
+              refMakeCall.current=false;
+              setVisible(true);
+            });
           });
         });
-      });
+  
 
       // Create Offer
     } catch (e) {}
@@ -340,7 +341,6 @@ const CallScreen = (props,ref) => {
       //nếu offer nhận được được thực hiện từ chính bạn thì bỏ qua
       return;
     }
-    startSound();
     refOffer.current = data.description;
     refCandidates.current = data.candidates;
     refCallId.current = data.callId;
@@ -350,14 +350,19 @@ const CallScreen = (props,ref) => {
     setOfferReceiverd(true);
     setupWebRTC()
       .then(localStreamURL => {
-        if (Platform.OS == 'android') startSound();
+        if(Platform.OS=="android")
+          startSound(); //nếu là android thì bật chuông báo có cuộc gọi đến //ios thì mặc định có callkeep
         setVisible(true);
       })
       .catch(e => {});
   };
 
   const onAnswerReceived = async data => {
-    if (Platform.OS == 'android') soundUtils.stop();
+    // InCallManager.stopRingback(); //sau khi người dùng bắt máy thì tắt chuông 
+    soundUtils.stop(); //khi người dùng bắt máy thì tắt chuông
+    setTimeout(() => {
+      InCallManager.setForceSpeakerphoneOn(true); //bật loa ngoài      
+    }, 2000);
     const {description, candidates} = data;
     description.sdp = BandwidthHandler.getSdp(description.sdp);
     await refPeer.current.setRemoteDescription(
@@ -365,7 +370,7 @@ const CallScreen = (props,ref) => {
     );
     candidates.forEach(c =>
       refPeer.current.addIceCandidate(new RTCIceCandidate(c)),
-    );
+    );        
   };
   const onLeave = (data = {}) => {
     refIgnoreCallIds.current.push(data.callId);
@@ -468,13 +473,6 @@ const CallScreen = (props,ref) => {
 
   const onReject = () => {
     props.onLeave && props.onLeave({callId: refCallId.current});
-
-    if (Platform.OS == 'ios') {
-      if (refCallId.current) {
-        // if (state.callId) {
-        RNCallKeep.reportEndCallWithUUID(refCallId.current, 2);
-      }
-    }
     let type =
       isAnswerSuccess || refMakeCall.current
         ? constants.socket_type.LEAVE
