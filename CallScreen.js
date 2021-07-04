@@ -1,4 +1,4 @@
-import React, {useState, useRef, useEffect} from 'react';
+import React, {useState, useRef, useEffect, forwardRef, useImperativeHandle} from 'react';
 import {
   RTCPeerConnection,
   RTCView,
@@ -44,7 +44,7 @@ const PATTERN = [
 ];
 const isFront = true; // Use Front camera?
 
-const CallScreen = props => {
+const CallScreen = (props,ref) => {
   const refCallId = useRef(null);
   const refOffer = useRef(null);
   const refPeer = useRef(null);
@@ -79,6 +79,9 @@ const CallScreen = props => {
       AppState.removeEventListener('change', handleAppStateChange);
     };
   }, []);
+  useImperativeHandle(ref, () => ({
+    startCall
+  }));
   useEffect(() => {
     if (refLoginToken.current != props.loginToken) {
       refLoginToken.current = props.loginToken;
@@ -337,6 +340,7 @@ const CallScreen = props => {
       //nếu offer nhận được được thực hiện từ chính bạn thì bỏ qua
       return;
     }
+    startSound();
     refOffer.current = data.description;
     refCandidates.current = data.candidates;
     refCallId.current = data.callId;
@@ -394,8 +398,9 @@ const CallScreen = props => {
       // if(callUUid && refCallId.current != callUUid)
       //   return;
       stopSound();
-      InCallManager.stopRingtone();
-      Vibration.cancel();
+
+      // InCallManager.stopRingtone();
+      // Vibration.cancel();
       if (refCallId.current && !fromCallKeep) {
         RNCallKeep.reportEndCallWithUUID(refCallId.current, 2);
       }
@@ -403,7 +408,7 @@ const CallScreen = props => {
       await refPeer.current.setRemoteDescription(
         new RTCSessionDescription(refOffer.current),
       );
-      InCallManager.start({media: 'video'});
+      // InCallManager.start({media: 'video'});
       if (Array.isArray(refCandidates.current)) {
         refCandidates.current.forEach(c =>
           refPeer.current.addIceCandidate(new RTCIceCandidate(c)),
@@ -411,12 +416,10 @@ const CallScreen = props => {
       }
       const answer = await refPeer.current.createAnswer();
       await refPeer.current.setLocalDescription(answer);
-      // setTimeout(() => {
-      //   onSwitchCamera();
-      //   onSwitchCamera();
-      //   // setState({
-      //   // });
-      // }, 2000);
+
+      setTimeout(() => {
+        InCallManager.setForceSpeakerphoneOn(true);
+      }, 2000);
     } catch (error) {
       console.log(error);
     }
@@ -704,7 +707,9 @@ const styles = StyleSheet.create({
     width: '40%',
     borderRadius: 5,
     alignSelf: 'flex-end',
-    marginRight: 5,
+    marginRight: 10,
+    marginTop: 10,
+    marginBottom: 5,
     zIndex: 10,
   },
   icon: {
@@ -746,4 +751,4 @@ const styles = StyleSheet.create({
   },
 });
 
-export default CallScreen;
+export default forwardRef(CallScreen);
