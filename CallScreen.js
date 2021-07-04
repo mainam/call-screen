@@ -1,38 +1,39 @@
-import React from "react";
+import React, {useState, useRef, useEffect} from 'react';
 import {
   RTCPeerConnection,
   RTCView,
   mediaDevices,
   RTCIceCandidate,
   RTCSessionDescription,
-} from "react-native-webrtc";
+} from 'react-native-webrtc';
 
 import {
   View,
   Platform,
   StyleSheet,
   TouchableOpacity,
-  Text,
   Dimensions,
   StatusBar,
   Image,
   Modal,
   Vibration,
-  AppState
-} from "react-native";
-import InCallManager from "react-native-incall-manager";
-import constants from "./constants";
-import VoipPushNotification from "react-native-voip-push-notification";
-import RNCallKeep from "react-native-callkeep";
-import Timer from "./Timer";
-import soundUtils from "./utils/sound-utils";
-import BandwidthHandler from "./BandwidthHandler";
-import stringUtils from "mainam-react-native-string-utils";
-import CallManager from "./CallManager";
+  AppState,
+} from 'react-native';
+import InCallManager from 'react-native-incall-manager';
+import constants from './constants';
+import VoipPushNotification from 'react-native-voip-push-notification';
+import RNCallKeep from 'react-native-callkeep';
+import Timer from './Timer';
+import soundUtils from './utils/sound-utils';
+import BandwidthHandler from './BandwidthHandler';
+import stringUtils from 'mainam-react-native-string-utils';
+import CallManager from './CallManager';
 import {NativeModules} from 'react-native';
+import PropTypes from 'prop-types';
+
 const {VideoCallModule} = NativeModules;
 
-const { height } = Dimensions.get("screen");
+const {height} = Dimensions.get('screen');
 
 const ONE_SECOND_IN_MS = 1000;
 
@@ -43,281 +44,164 @@ const PATTERN = [
 ];
 const isFront = true; // Use Front camera?
 
-class CallScreen extends React.Component {
-  constructor(props) {
-    super(props);
+const CallScreen = props => {
+  const refCallId = useRef(null);
+  const refOffer = useRef(null);
+  const refPeer = useRef(null);
+  const refSocket = useRef(null);
+  const refCandidates = useRef(null);
+  const refLocalStream = useRef(null);
+  const refConnected = useRef(null);
+  const refSettingCallKeep = useRef(null);
+  const refDeviceToken = useRef(null);
+  const refCallingParter = useRef(null);
+  const refCallingData = useRef(null);
+  const refIgnoreCallIds = useRef([]);
+  const refAppState = useRef(AppState.currentState);
+  const refLoginToken = useRef(null);
+  const refTimeout = useRef(null);
+  const refPendingCandidates = useRef([]);
+  const refOfferReceiverd = useRef(null);
+  const refMakeCall = useRef(false);
+  const [remoteStreamURL, setRemoteStreamURL] = useState(false);
+  const [isMuted, setMute] = useState(false);  
+  const [isSpeak, setSpeak] = useState(true);  
+  const [isOfferReceiverd,setOfferReceiverd] = useState(false);
+  const [isAnswerSuccess,setAnswerSuccess] = useState(false);
+  const [isVisible,setVisible] = useState(false);
 
-    this.state = {
-      pendingCandidates: [],
-      // isCamFront: true,
-      isVisible: false,
-      isAnswerSuccess: false,
-      makeCall: false,
-      isSpeak: true,
+  useEffect(() => {
+    addEventCallKeep();
+    registerSocket();
+    AppState.addEventListener('change', handleAppStateChange);
+    return () => {
+      removeEventCallKeep();
+      AppState.removeEventListener('change', handleAppStateChange);
     };
-    this.refCallId = React.createRef();
-    this.refOffer = React.createRef();
-    this.refPeer = React.createRef();
-    this.refSocket = React.createRef();
-    this.refCandidates = React.createRef();
-    this.refLocalStream = React.createRef();
-    this.refConnected = React.createRef();
-    this.refSettingCallKeep = React.createRef();
-    this.refDeviceToken = React.createRef();
-    this.refCallingParter = React.createRef();
-    this.refCallingData = React.createRef();
-    this.refIgnoreCallIds = React.createRef();
-    this.refIgnoreCallIds.current = [];
-    this.appState =  React.createRef();
-    this.appState.current = AppState.currentState;
-  }
-
-  handleAppStateChange = (nextAppState) => {
-    if (
-      this.appState.current.match(/inactive|background/) &&
-      nextAppState === "active"
-    ) {
-      console.log("App has come to the foreground!");
-    }
-
-    this.appState.current = nextAppState;
-    // this.setState({
-    //   appState: appState.current
-    // })
-  };
-
-  getCallingName = () => {
-    if (this.refCallingData.current)
-    {
-      if ((this.props.userId == this.refCallingData.current.from)) {
-        return this.refCallingData.current.toName;
+  }, []);
+  useEffect(() => {
+    if (refLoginToken.current != props.loginToken) {
+      refLoginToken.current = props.loginToken;
+      refConnected.current = false; //bỏ đánh dấu là đã connect
+      if (!props.loginToken) {
+        refSocket.current?.emit(
+          constants.socket_type.DISCONNECT,
+          {token: refDeviceToken.current, platform: Platform.OS},
+          data => {
+            refSocket.current.disconnect();
+            refSocket.current = null;
+          },
+        );
       } else {
-        return this.refCallingData.current.fromName;
+        registerSocket();
       }
     }
-    else return "";
+  }, [props.loginToken]);
+  const handleAppStateChange = nextAppState => {
+    if (
+      refAppState.current.match(/inactive|background/) &&
+      nextAppState === 'active'
+    ) {
+      console.log('App has come to the foreground!');
+    }
+
+    refAppState.current = nextAppState;
   };
-
-  render() {
-    const {
-      remoteStreamURL,
-      callStatus,
-      isAnswerSuccess,
-      isVisible,
-      makeCall,
-      // isCamFront,
-      isSpeak,
-      isOfferReceiverd,
-      isMuted,
-    } = this.state;
-    return (
-      <Modal
-        animated={true}
-        animationType="slide"
-        transparent={false}
-        visible={isVisible}
-      >
-        <View style={styles.container}>
-          <StatusBar translucent={true} backgroundColor={"transparent"} />
-          <View
-            style={[
-              styles.rtcview,
-              { height, ...StyleSheet.absoluteFillObject, zIndex: 0 },
-            ]}
-          >
-            {remoteStreamURL ? (
-              <RTCView
-                style={styles.rtc}
-                zOrder={-1}
-                mirror={false}
-                objectFit="cover"
-                streamURL={remoteStreamURL}
-              />
-            ) : null}
-          </View>
-
-          {/* {localPC.current ? <BandWidth localPc={localPC.current} /> : null} */}
-          {
-            this.refLocalStream.current && (makeCall || isAnswerSuccess) && this.state.isCameraReady?
-          <View style={[styles.groupLocalSteam]}>
-            {this.refLocalStream.current && (
-              <RTCView
-                style={[styles.rtc]}
-                zOrder={1}
-                // mirror={isCamFront}
-                streamURL={this.refLocalStream.current.toURL()}
-              />
-            )}
-            <TouchableOpacity
-              onPress={this.onSwitchCamera}
-              style={styles.buttonSwitch}
-            >
-              <Image
-                source={require("./images/camera_switch.png")}
-                style={styles.iconSwitch}
-              />
-            </TouchableOpacity>
-          </View>
-          :null}
-          <Timer
-            data={{
-              mediaConnected: isAnswerSuccess,
-            }}
-            callingName={this.getCallingName()}
-          />  
-          <View
-            style={{
-              flex: 1,
-              justifyContent: "flex-end",
-            }}
-          >
-            {this.refLocalStream.current && (makeCall || isAnswerSuccess) && (
-              <View style={styles.toggleButtons}>
-                <TouchableOpacity
-                  onPress={this.onToggleMute}
-                  style={{ padding: 10 }}
-                >
-                  {isMuted ? (
-                    <Image
-                      source={require("./images/mute_selected.png")}
-                      style={styles.icon}
-                    />
-                  ) : (
-                    <Image
-                      source={require("./images/mute.png")}
-                      style={styles.icon}
-                    />
-                  )}
-                </TouchableOpacity>
-                <TouchableOpacity
-                  onPress={this.onToggleSpeaker}
-                  style={{ padding: 10 }}
-                >
-                  {isSpeak ? (
-                    <Image
-                      source={require("./images/speaker_selected.png")}
-                      style={styles.icon}
-                    />
-                  ) : (
-                    <Image
-                      source={require("./images/speaker.png")}
-                      style={styles.icon}
-                    />
-                  )}
-                </TouchableOpacity>
-              </View>
-            )}
-            <View style={styles.toggleButtons}>
-              {isOfferReceiverd && !isAnswerSuccess ? (
-                <TouchableOpacity
-                  onPress={this.onAnswer(false)}
-                  style={{ padding: 10 }}
-                >
-                  <Image
-                    source={require("./images/accept_call.png")}
-                    style={styles.icon}
-                  />
-                </TouchableOpacity>
-              ) : null}
-              <TouchableOpacity
-                onPress={this.onReject}
-                style={{ padding: 10 }}
-              >
-                <Image
-                  source={require("./images/end_call.png")}
-                  style={styles.icon}
-                />
-              </TouchableOpacity>
-            </View>
-          </View>
-        </View>
-      </Modal>
-    );
-  }
-  startSound = () => {
-    InCallManager.startRingtone("_BUNDLE_");
+  const getCallingName = () => {
+    if (refCallingData.current) {
+      if (props.userId == refCallingData.current.from) {
+        return refCallingData.current.toName;
+      } else {
+        return refCallingData.current.fromName;
+      }
+    } else return '';
+  };
+  const startSound = () => {
+    InCallManager.startRingtone('_BUNDLE_');
     Vibration.vibrate(PATTERN, true);
   };
-  stopSound = () => {
+  const stopSound = () => {
     InCallManager.stopRingtone();
     InCallManager.stop();
     Vibration.cancel();
   };
-  getVideoDevice = ()=>{
-    return new Promise((resolve, reject)=>{
-      const facing = isFront ? "front" : "environment";
+
+  const getVideoDevice = () => {
+    return new Promise((resolve, reject) => {
+      const facing = isFront ? 'front' : 'environment';
       try {
-        mediaDevices.enumerateDevices().then(devices=>{
-       const videoSourceId = devices.find(
-        (device) => device.kind === "videoinput" && device.facing === facing
-      );
-      if(videoSourceId)
-      resolve(videoSourceId);
-      reject(null);
-        })
+        mediaDevices.enumerateDevices().then(devices => {
+          const videoSourceId = devices.find(
+            device => device.kind === 'videoinput' && device.facing === facing,
+          );
+          if (videoSourceId) resolve(videoSourceId);
+          reject(null);
+        });
       } catch (error) {
         console.log(error);
-        reject(error);        
+        reject(error);
       }
     });
-
-  }
-  setupWebRTC = () => {
-    return new Promise( (resolve,reject)=>{
-      this.getVideoDevice().then(videoSourceId=>{
-        const facingMode = isFront ? "user" : "environment";
-        const constraints = {
-          audio: true,
-          video: {
-            mandatory: {
-              minWidth: 500, // Provide your own width, height and frame rate here
-              minHeight: 300,
-              minFrameRate: 30,
+  };
+  const setupWebRTC = () => {
+    return new Promise((resolve, reject) => {
+      getVideoDevice()
+        .then(videoSourceId => {
+          const facingMode = isFront ? 'user' : 'environment';
+          const constraints = {
+            audio: true,
+            video: {
+              mandatory: {
+                minWidth: 500, // Provide your own width, height and frame rate here
+                minHeight: 300,
+                minFrameRate: 30,
+              },
+              facingMode,
+              optional: videoSourceId ? [{sourceId: videoSourceId}] : [],
             },
-            facingMode,
-            optional: videoSourceId ? [{ sourceId: videoSourceId }] : [],
-          },
-        };
-        const peer = new RTCPeerConnection(CallManager.DEFAULT_ICE);
-        peer.oniceconnectionstatechange = this.onICEConnectionStateChange;
-        peer.onaddstream = this.onAddStream;
-        peer.onicecandidate = this.onICECandiate;
-        peer.onicegatheringstatechange = this.onICEGratherStateChange;
-        mediaDevices.getUserMedia(constraints).then(newStream=>{
-          peer.addStream(newStream);
-          this.refLocalStream.current = newStream;
-          this.refPeer.current = peer;
-          resolve(newStream.toURL());
-        }).catch(e=>{
-          reject(e)
+          };
+          const peer = new RTCPeerConnection(CallManager.DEFAULT_ICE);
+          peer.oniceconnectionstatechange = onICEConnectionStateChange;
+          peer.onaddstream = onAddStream;
+          peer.onicecandidate = onICECandiate;
+          peer.onicegatheringstatechange = onICEGratherStateChange;
+          mediaDevices
+            .getUserMedia(constraints)
+            .then(newStream => {
+              peer.addStream(newStream);
+              refLocalStream.current = newStream;
+              refPeer.current = peer;
+              resolve(newStream.toURL());
+            })
+            .catch(e => {
+              reject(e);
+            });
+        })
+        .catch(e => {
+          reject(e);
         });
-      }).catch(e=>{
-        reject(e)
-      })
-
-      
     });
   };
-  onICEGratherStateChange = (ev) => {
-    switch (this.refPeer.current.iceGatheringState) {
-      case "gathering":
-        if (!this.state.makeCall) this.setState({ callStatus: "Đang kết nối" });
+
+  const onICEGratherStateChange = ev => {
+    switch (refPeer.current.iceGatheringState) {
+      case 'gathering':
         break;
-      case "complete":        
-        if (this.state.pendingCandidates.length > 0 && this.refCallId.current) {
-          this.sendMessage(
-            this.state.isOfferReceiverd
+      case 'complete':
+        if (refPendingCandidates.current.length > 0 && refCallId.current) {
+          sendMessage(
+            refOfferReceiverd.current
               ? constants.socket_type.ANSWER
               : constants.socket_type.OFFER,
             {
-              to: this.refCallingParter.current,
-              description: this.refPeer.current.localDescription,
-              candidates: this.state.pendingCandidates,
-              callId: this.refCallId.current,
-              sdp: this.refOffer.current,
-              from: this.props.userId,
-              data: this.refCallingData.current,
-            }
+              to: refCallingParter.current,
+              description: refPeer.current.localDescription,
+              candidates: refPendingCandidates.current,
+              callId: refCallId.current,
+              sdp: refOffer.current,
+              from: props.userId,
+              data: refCallingData.current,
+            },
           );
         } else {
           //
@@ -327,337 +211,300 @@ class CallScreen extends React.Component {
         break;
     }
   };
-  startCall = async ({ from, fromName, to, toName } = {}) => {
+  const startCall = async ({from, fromName, to, toName} = {}) => {
     try {
-      this.refCallId.current = stringUtils.guid();
-      console.log(this.refCallId.current)
-      this.refCallingData.current={
+      refCallId.current = stringUtils.guid();
+      console.log(refCallId.current);
+      (refCallingData.current = {
         from,
         fromName,
         to,
         toName,
-      },
-      this.refCallingParter.current=to;
-      this.setupWebRTC().then(localStreamURL=>{
-        this.refPeer.current.createOffer().then(offer=>{
-          this.refOffer.current=offer;
-          this.refPeer.current.setLocalDescription(offer).then(s=>{
-            InCallManager.start({ media: "video" });
-            if(Platform.OS=="android")
-            soundUtils.play("call_phone.mp3");
-            this.setState({
-              isVisible: true,   
-              isCameraReady: true,     
-              makeCall: true,
-              callStatus: ""
-            });  
-          })
-        })  
+      }),
+        (refCallingParter.current = to);
+      setupWebRTC().then(localStreamURL => {
+        refPeer.current.createOffer().then(offer => {
+          refOffer.current = offer;
+          refPeer.current.setLocalDescription(offer).then(s => {
+            InCallManager.start({media: 'video'});
+            if (Platform.OS == 'android') soundUtils.play('call_phone.mp3');
+            refMakeCall.current=false;
+            setVisible(true);
+          });
+        });
       });
-      
-      
+
       // Create Offer
-     } catch (e) {}
+    } catch (e) {}
   };
-  onSwitchCamera = () => {
-    if (this.refLocalStream.current) {
-      
-      this.refLocalStream.current
+  const onSwitchCamera = () => {
+    if (refLocalStream.current) {
+      refLocalStream.current
         .getVideoTracks()
-        .forEach((track) => track._switchCamera());
-      // this.setState({ isCamFront: !this.state.isCamFront });
+        .forEach(track => track._switchCamera());
+      // setState({ isCamFront: !state.isCamFront });
     }
   };
-  onTimeOut = () => {
-    this.timeout = setTimeout(() => {
-      this.onReject();
+  const onTimeOut = () => {
+    refTimeout.current = setTimeout(() => {
+      onReject();
     }, 30 * 60 * 1000);
   };
 
   // Mutes the local's outgoing audio
-  onToggleMute = () => {
-    this.refLocalStream.current &&
-      this.refLocalStream.current.getAudioTracks().forEach((track) => {
+  const onToggleMute = () => {
+    refLocalStream.current &&
+      refLocalStream.current.getAudioTracks().forEach(track => {
         track.enabled = !track.enabled;
-        this.setState({ isMuted: !track.enabled });
+        setMute(!track.enabled)
       });
   };
-  onToggleSpeaker = () => {
-    const isSpeak = !this.state.isSpeak;
-    this.setState({ isSpeak });
-    InCallManager.setForceSpeakerphoneOn(isSpeak);
+  const onToggleSpeaker = () => {
+    const newValue = !isSpeak;
+    setSpeak(newValue)
+    InCallManager.setForceSpeakerphoneOn(newValue);
   };
-  onICEConnectionStateChange = (e) => {
-    const newState = {};
+  const onICEConnectionStateChange = e => {
     switch (e.target.iceConnectionState) {
-      case "completed":
+      case 'completed':
         break;
-      case "connected":
-        this.onTimeOut();
-        newState.isAnswerSuccess = true;
+      case 'connected':
+        onTimeOut();
+        setAnswerSuccess(true)
         break;
-      case "closed":
-      case "disconnected":
+      case 'closed':
+      case 'disconnected':
         break;
-      case "failed":
-        // this.onReject()
+      case 'failed':
+        // onReject()
         break;
     }
-    this.setState(newState);
   };
 
-  onICECandiate = (e) => {
-    const { candidate } = e;
+  const onICECandiate = e => {
+    const {candidate} = e;
     if (candidate) {
-      let pendingRemoteIceCandidates = this.state.pendingCandidates;
-      if (Array.isArray(pendingRemoteIceCandidates)) {
-        this.setState({
-          pendingCandidates: [...pendingRemoteIceCandidates, candidate],
-        });
-      } else {
-        this.setState({
-          pendingCandidates: [candidate],
-        });
-      }
+      refPendingCandidates.current = [...refPendingCandidates.current,candidate];
     }
   };
 
-  onAddStream = (e) => {
-    this.setState({
-      remoteStreamURL: e.stream.toURL(),
-    });
+  const onAddStream = e => {
+    setRemoteStreamURL(e.stream.toURL());
   };
 
- 
-
-  // onRNCallKitDidActivateAudioSession = (data) => {
+  //const onRNCallKitDidActivateAudioSession = (data) => {
   //   // AudioSession đã được active, có thể phát nhạc chờ nếu là outgoing call, answer call nếu là incoming call.
-  //   this.onAnswer(true)();
+  //   onAnswer(true)();
   // };
-  onCallKeepAnswer = (callUUid) => {
-    // debugger
-    if(this.appState.current.match(/inactive|background/))
-    {
-      alert("Nhấn Ok để quay lại cuộc gọi"); 
+  const onCallKeepAnswer = callUUid => {
+    if (refAppState.current.match(/inactive|background/)) {
+      alert('Nhấn Ok để quay lại cuộc gọi');
     }
-    this.onAnswer(true)();
+    onAnswer(true, callUUid)();
   };
-  onCallKeepEndCall = ({ callUUid }) => {
-    if (!this.state.isAnswerSuccess) this.onReject();
+  const onCallKeepEndCall = ({callUUid}) => {
+    if (!isAnswerSuccess) onReject();
   };
-  addEventCallKeep = () => {
-    RNCallKeep.addEventListener("answerCall", this.onCallKeepAnswer);
-    RNCallKeep.addEventListener("endCall", this.onCallKeepEndCall);
+  const addEventCallKeep = () => {
+    RNCallKeep.addEventListener('answerCall', onCallKeepAnswer);
+    RNCallKeep.addEventListener('endCall', onCallKeepEndCall);
   };
-  removeEvent = () => {
-    RNCallKeep.removeEventListener("answerCall", this.onCallKeepAnswer);
-    RNCallKeep.removeEventListener("endCall", this.onCallKeepEndCall);
-    VoipPushNotification.removeEventListener("register");
+  const removeEventCallKeep = () => {
+    RNCallKeep.removeEventListener('answerCall', onCallKeepAnswer);
+    RNCallKeep.removeEventListener('endCall', onCallKeepEndCall);
+    VoipPushNotification.removeEventListener('register');
   };
-  onOfferReceived = (data ={}) => {
-    if(this.refCallId.current) //Nếu đang trong cuộc gọi thì kêt thúc cuộc gọi
-    {
-      console.log("reject-call",data.callId)
+  const onOfferReceived = (data = {}) => {
+    if (refCallId.current) {
+      //Nếu đang trong cuộc gọi thì kêt thúc cuộc gọi
+      console.log('reject-call', data.callId);
       RNCallKeep.reportEndCallWithUUID(data.callId, 2);
 
-      if (data.callId && VideoCallModule.reject) { 
+      if (data.callId && VideoCallModule?.reject) {
         VideoCallModule.reject(data.callId);
       }
-      this.refSocket.current.emit(constants.socket_type.LEAVE, {
+      refSocket.current.emit(constants.socket_type.LEAVE, {
         to: data.from,
-        callId: data.callId, // this.state.callId,
+        callId: data.callId, // state.callId,
         type: constants.socket_type.REJECT,
       });
       return;
     }
-    if (data.from == this.props.userId || this.refIgnoreCallIds.current.includes(data.callId)) {
+    if (
+      data.from == props.userId ||
+      refIgnoreCallIds.current.includes(data.callId)
+    ) {
       //nếu offer nhận được được thực hiện từ chính bạn thì bỏ qua
       return;
     }
-    this.refOffer.current = data.description;
-    this.refCandidates.current = data.candidates;
-    this.refCallId.current = data.callId;
-    this.refCallingData.current = data.data || {};
-    this.refCallingParter.current = data.from;
-    this.setupWebRTC().then(localStreamURL=>{
-      if(Platform.OS=="android")
-        this.startSound();
-      this.setState({
-        isOfferReceiverd: true,
-        isOfferAnswered: false,
-        isVisible: true,
-      });  
-    }).catch(e=>{
-    });
+    refOffer.current = data.description;
+    refCandidates.current = data.candidates;
+    refCallId.current = data.callId;
+    refCallingData.current = data.data || {};
+    refCallingParter.current = data.from;
+    refOfferReceiverd.current=true;
+    setOfferReceiverd(true);
+    setupWebRTC()
+      .then(localStreamURL => {
+        if (Platform.OS == 'android') startSound();
+        setVisible(true);
+      })
+      .catch(e => {});
   };
 
-  onAnswerReceived = async (data) => {
-    if(Platform.OS=="android")
-    soundUtils.stop();
-    const { description, candidates } = data;
+  const onAnswerReceived = async data => {
+    if (Platform.OS == 'android') soundUtils.stop();
+    const {description, candidates} = data;
     description.sdp = BandwidthHandler.getSdp(description.sdp);
-    await this.refPeer.current.setRemoteDescription(
-      new RTCSessionDescription(description)
+    await refPeer.current.setRemoteDescription(
+      new RTCSessionDescription(description),
     );
-    candidates.forEach((c) =>
-      this.refPeer.current.addIceCandidate(new RTCIceCandidate(c))
+    candidates.forEach(c =>
+      refPeer.current.addIceCandidate(new RTCIceCandidate(c)),
     );
-
   };
-  onLeave = (data = {}) => {
-    this.refIgnoreCallIds.current.push(data.callId);
-    if(this.refIgnoreCallIds.current.length>10)
-    {
-      this.refIgnoreCallIds.current.shift();
+  const onLeave = (data = {}) => {
+    refIgnoreCallIds.current.push(data.callId);
+    if (refIgnoreCallIds.current.length > 10) {
+      refIgnoreCallIds.current.shift();
     }
-    
-    if (data.callId == this.refCallId.current) {
-      let reason = "";
-      if (data.status && data.code == 1 && !this.state.isAnswerSuccess) {
-        reason  ="Máy bận";
-      } else {
-        reason = "Kết thúc cuộc gọi";
-      }
-      this.handleReject();
-      this.props.onLeave&&
-        this.props.onLeave({callId: this.refCallId.current, reason,code: data.code});
-    }
-    if (data.callId && VideoCallModule.reject) {
-      VideoCallModule.reject(data.callId);
-    }    
-  }
 
-  onAnswer =  (fromCallKeep) => async ()=>{
-    try {  
-      if (this.refCallId.current && VideoCallModule.reject) {
-        VideoCallModule.reject(this.refCallId.current);
+    if (data.callId == refCallId.current) {
+      let reason = '';
+      if (data.status && data.code == 1 && !isAnswerSuccess) {
+        reason = 'Máy bận';
+      } else {
+        reason = 'Kết thúc cuộc gọi';
       }
-      this.stopSound();
+      handleReject();
+      props.onLeave &&
+        props.onLeave({callId: refCallId.current, reason, code: data.code});
+    }
+    if (data.callId && VideoCallModule?.reject) {
+      VideoCallModule.reject(data.callId);
+    }
+  };
+
+  const onAnswer = (fromCallKeep, callUUid) => async () => {
+    try {
+      if (refCallId.current && VideoCallModule?.reject) {
+        VideoCallModule.reject(refCallId.current);
+      }
+      if (!refPeer.current) return;
+      // if(callUUid && refCallId.current != callUUid)
+      //   return;
+      stopSound();
       InCallManager.stopRingtone();
       Vibration.cancel();
-      if(this.refCallId.current && !fromCallKeep)
-      {
-        RNCallKeep.reportEndCallWithUUID(this.refCallId.current, 2);
+      if (refCallId.current && !fromCallKeep) {
+        RNCallKeep.reportEndCallWithUUID(refCallId.current, 2);
       }
-      
-      await this.refPeer.current.setRemoteDescription(
-        new RTCSessionDescription(this.refOffer.current)
+
+      await refPeer.current.setRemoteDescription(
+        new RTCSessionDescription(refOffer.current),
       );
-      InCallManager.start({ media: "video" });
-      if (Array.isArray(this.refCandidates.current)) {
-        this.refCandidates.current.forEach((c) =>
-          this.refPeer.current.addIceCandidate(new RTCIceCandidate(c))
+      InCallManager.start({media: 'video'});
+      if (Array.isArray(refCandidates.current)) {
+        refCandidates.current.forEach(c =>
+          refPeer.current.addIceCandidate(new RTCIceCandidate(c)),
         );
       }
-      const answer = await this.refPeer.current.createAnswer();
-      await this.refPeer.current.setLocalDescription(answer);
-      this.setState({
-        isOfferAnswered: true,
-      });
-      setTimeout(() => {
-        this.onSwitchCamera();
-        this.onSwitchCamera();
-        this.setState({
-          isCameraReady: true
-        })
-      }, 2000);
-
-    } catch (error) {}
+      const answer = await refPeer.current.createAnswer();
+      await refPeer.current.setLocalDescription(answer);
+      // setTimeout(() => {
+      //   onSwitchCamera();
+      //   onSwitchCamera();
+      //   // setState({
+      //   // });
+      // }, 2000);
+    } catch (error) {
+      console.log(error);
+    }
   };
 
-  handleReject = () => {
-    if (this.refCallId.current && VideoCallModule.reject) {
-      VideoCallModule.reject(this.refCallId.current);
+  const handleReject = () => {
+    if (refCallId.current && VideoCallModule?.reject) {
+      VideoCallModule.reject(refCallId.current);
     }
-    if (this.refPeer.current) this.refPeer.current.close();
+    if (refPeer.current) refPeer.current.close();
     soundUtils.stop();
-    this.stopSound();
-    if (this.timeout) clearTimeout(this.timeout);
-    if (this.refCallId.current) {
-      RNCallKeep.reportEndCallWithUUID(this.refCallId.current, 2);
+    stopSound();
+    if (refTimeout.current) {
+      clearTimeout(refTimeout.current);
+      refTimeout.current = null;
     }
-    this.refCallId.current = null;
-    this.refLocalStream.current = null;
-    this.refCallingParter.current = null;
-    this.refCallingData.current = null;
-    this.setState({
-      isVisible: false,
-      isOfferReceiverd: false,
-      isOfferAnswered: false,
-      data: {},
-      callingName: "",
-      remoteStreamURL: null,
-      pendingCandidates: [],
-      data: null,
-      isSpeak: true,
-      isMuted: false,
-      // isCamFront: true,
-      callStatus: null,
-      isAnswerSuccess: false,
-      makeCall: false,
-      isCameraReady: false
-    });
+    if (refCallId.current) {
+      RNCallKeep.reportEndCallWithUUID(refCallId.current, 2);
+    }
+    refCallId.current = null;
+    refLocalStream.current = null;
+    refCallingParter.current = null;
+    refCallingData.current = null;
+    refPendingCandidates.current= [];
+    refOfferReceiverd.current=false;
+    refMakeCall.current=false;
+    setRemoteStreamURL(null);
+    setMute(false);
+    setSpeak(true);
+    setOfferReceiverd(false);
+    setAnswerSuccess(false);
+    setVisible(false);
   };
 
-  sendMessage = (type, msgObj) => {
-    if (this.refSocket.current) {
-      this.refSocket.current.emit(type, msgObj, (data) => {});
+  const sendMessage = (type, msgObj) => {
+    if (refSocket.current) {
+      refSocket.current.emit(type, msgObj, data => {});
     } else {
       const e = {
-        code: "websocket_error",
-        message: "WebSocket state:" + ws.readyState,
+        code: 'websocket_error',
+        message: 'WebSocket state:' + ws.readyState,
       };
       throw e;
     }
   };
 
-  onReject = () => {
-    this.props.onLeave&&this.props.onLeave({callId: this.refCallId.current});
+  const onReject = () => {
+    props.onLeave && props.onLeave({callId: refCallId.current});
 
-    if(Platform.OS=="ios")
-    {
-      if (this.refCallId.current) {
-        // if (this.state.callId) {
-        RNCallKeep.reportEndCallWithUUID(this.refCallId.current, 2);
+    if (Platform.OS == 'ios') {
+      if (refCallId.current) {
+        // if (state.callId) {
+        RNCallKeep.reportEndCallWithUUID(refCallId.current, 2);
       }
     }
     let type =
-      this.state.isAnswerSuccess || this.state.makeCall
+      isAnswerSuccess || refMakeCall.current
         ? constants.socket_type.LEAVE
         : constants.socket_type.REJECT;
-    this.refSocket.current.emit(constants.socket_type.LEAVE, {
-      to: this.refCallingParter.current,
-      callId: this.refCallId.current, // this.state.callId,
+    refSocket.current.emit(constants.socket_type.LEAVE, {
+      to: refCallingParter.current,
+      callId: refCallId.current, // state.callId,
       type,
     });
-    this.handleReject();
+    handleReject();
   };
-  componentWillUnmount() {
-    this.removeEvent();
-    AppState.removeEventListener("change", this.handleAppStateChange);
-  }
-  setupCallKeep = () => {
+  const setupCallKeep = () => {
     return new Promise((resolve, reject) => {
-      if (!this.refSettingCallKeep.current) {
+      if (!refSettingCallKeep.current) {
         const options = {
           ios: {
-            appName: "ISOFHCARE",
+            appName: 'ISOFHCARE',
           },
           android: {
-            alertTitle: "Thông báo",
-            alertDescription: "Cho phép iSofHcare truy cập cuộc gọi của bạn",
-            cancelButton: "Huỷ",
-            okButton: "Đồng ý",
-            imageName: "ic_launcher",
+            alertTitle: 'Thông báo',
+            alertDescription: 'Cho phép iSofHcare truy cập cuộc gọi của bạn',
+            cancelButton: 'Huỷ',
+            okButton: 'Đồng ý',
+            imageName: 'ic_launcher',
             // additionalPermissions: [PermissionsAndroid.PERMISSIONS.example]
           },
         };
         RNCallKeep.setup(options)
-          .then((res) => {
-            this.refSettingCallKeep.current = true;
+          .then(res => {
+            refSettingCallKeep.current = true;
             resolve(res);
           })
-          .catch((err) => {
+          .catch(err => {
             reject(err);
           });
         RNCallKeep.setAvailable(true);
@@ -666,74 +513,57 @@ class CallScreen extends React.Component {
       }
     });
   };
-  onDisconnect = async (data2) => {
-    this.refConnected.current = false;
+  const onSocketDisconnect = async data2 => {
+    refConnected.current = false;
   };
-  onSocketConnected = async (data2) => {
+  const onSocketConnected = async data2 => {
     try {
-      if (this.refConnected.current) return; // nếu đã connect rồi thì bỏ qua
-      this.refConnected.current = true; //đánh dấu là đã connect
-      if (Platform.OS == "ios") {
-        this.setupCallKeep();
+      if (refConnected.current) return; // nếu đã connect rồi thì bỏ qua
+      refConnected.current = true; //đánh dấu là đã connect
+      if (Platform.OS == 'ios') {
+        setupCallKeep();
         VoipPushNotification.requestPermissions();
-        VoipPushNotification.addEventListener("register", (token) => {
+        VoipPushNotification.addEventListener('register', token => {
           // send token to your apn provider server
-          this.refDeviceToken.current = token;
-          this.connectToSocket(token);
+          refDeviceToken.current = token;
+          connectToSocket(token);
         });
         // VoipPushNotification.registerVoipToken();
         // VoipPushNotification.addEventListener('notification', notification => {
         //   // Handle incoming pushes
-        //   if (!this.refCallId.current) {
-        //     this.refCallId.current = notification.getData().data.UUID;
+        //   if (!refCallId.current) {
+        //     refCallId.current = notification.getData().data.UUID;
         //   } else {
         //     // if Callkit already exists then end Callkit wiht the callKitUUID
-        //     RNCallKeep.endCall(this.refCallId.current);
+        //     RNCallKeep.endCall(refCallId.current);
         //   }
         // });
         VoipPushNotification.registerVoipToken();
       } else {
         const token = await CallManager.firebase.messaging().getToken();
-        this.refDeviceToken.current = token;
-        this.connectToSocket(token);
+        refDeviceToken.current = token;
+        connectToSocket(token);
       }
     } catch (error) {
       console.log(error);
     }
   };
-  connectToSocket = (token) => {
-    this.refSocket.current &&
-      this.refSocket.current.emit(constants.socket_type.CONNECT, {
+  const connectToSocket = token => {
+    refSocket.current &&
+      refSocket.current.emit(constants.socket_type.CONNECT, {
         token,
-        id: this.props.userId,
+        id: props.userId,
         platform: Platform.OS,
         deviceId: CallManager.deviceId,
         packageName: CallManager.packageName,
       });
   };
-  componentDidUpdate = (preProps, nextProps) => {
-    if (preProps.loginToken != this.props.loginToken) {
-      this.refConnected.current = false; //bỏ đánh dấu là đã connect
-      if (!this.props.loginToken) {
-        this.refSocket.current.emit(
-          constants.socket_type.DISCONNECT,
-          { token: this.refDeviceToken.current, platform: Platform.OS },
-          (data) => {
-            this.refSocket.current.disconnect();
-            this.refSocket.current = null;
-          }
-        );
-      } else {
-        this.registerSocket();
-      }
-    }
-  };
-  registerSocket = () => {
-    if (this.props.loginToken && !this.refSocket.current) {
-      this.refSocket.current = this.props.io.connect(CallManager.host, {
-        transports: ["websocket"],
+  const registerSocket = () => {
+    if (props.loginToken && !refSocket.current) {
+      refSocket.current = props.io.connect(CallManager.host, {
+        transports: ['websocket'],
         query: {
-          token: this.props.loginToken, //verify socket io với login token
+          token: props.loginToken, //verify socket io với login token
         },
         upgrade: true,
         reconnection: true,
@@ -741,46 +571,139 @@ class CallScreen extends React.Component {
         timeout: 30000,
         rememberUpgrade: true,
       });
-      this.refSocket.current.on(
-        constants.socket_type.CONNECT,
-        this.onSocketConnected
-      );
-      this.refSocket.current.on(
+      refSocket.current.on(constants.socket_type.CONNECT, onSocketConnected);
+      refSocket.current.on(
         constants.socket_type.DISCONNECT,
-        this.onDisconnect
+        onSocketDisconnect,
       );
-      this.refSocket.current.on(
-        constants.socket_type.OFFER,
-        this.onOfferReceived
-      );
-      this.refSocket.current.on(
-        constants.socket_type.ANSWER,
-        this.onAnswerReceived
-      );
-      this.refSocket.current.on(constants.socket_type.LEAVE, this.onLeave);
-      this.refSocket.current.connect();
+      refSocket.current.on(constants.socket_type.OFFER, onOfferReceived);
+      refSocket.current.on(constants.socket_type.ANSWER, onAnswerReceived);
+      refSocket.current.on(constants.socket_type.LEAVE, onLeave);
+      refSocket.current.connect();
     }
   };
-  componentDidMount() {
-    this.addEventCallKeep();
-    this.registerSocket();
-    AppState.addEventListener("change", this.handleAppStateChange);
-  }
-}
+
+  return (
+    <Modal
+      animated={true}
+      animationType="slide"
+      transparent={false}
+      visible={isVisible}>
+      <View style={styles.container}>
+        <StatusBar translucent={true} backgroundColor={'transparent'} />
+        <View
+          style={[
+            styles.rtcview,
+            {height, ...StyleSheet.absoluteFillObject, zIndex: 0},
+          ]}>
+          {remoteStreamURL ? (
+            <RTCView
+              style={styles.rtc}
+              zOrder={-1}
+              mirror={false}
+              objectFit="cover"
+              streamURL={remoteStreamURL}
+            />
+          ) : null}
+        </View>
+
+        {/* {localPC.current ? <BandWidth localPc={localPC.current} /> : null} */}
+        {refLocalStream.current? (
+          <View style={[styles.groupLocalSteam]}>
+            <RTCView
+              style={[styles.rtc]}
+              zOrder={1}
+              // mirror={isCamFront}
+              streamURL={refLocalStream.current.toURL()}
+            />
+            <TouchableOpacity
+              onPress={onSwitchCamera}
+              style={styles.buttonSwitch}>
+              <Image
+                source={require('./images/camera_switch.png')}
+                style={styles.iconSwitch}
+              />
+            </TouchableOpacity>
+          </View>
+        ) : null}
+        <Timer
+          data={{
+            mediaConnected: isAnswerSuccess,
+          }}
+          callingName={getCallingName()}
+        />
+        <View
+          style={{
+            flex: 1,
+            justifyContent: 'flex-end',
+          }}>
+          {refLocalStream.current && (refMakeCall.current || isAnswerSuccess) && (
+            <View style={styles.toggleButtons}>
+              <TouchableOpacity onPress={onToggleMute} style={{padding: 10}}>
+                {isMuted ? (
+                  <Image
+                    source={require('./images/mute_selected.png')}
+                    style={styles.icon}
+                  />
+                ) : (
+                  <Image
+                    source={require('./images/mute.png')}
+                    style={styles.icon}
+                  />
+                )}
+              </TouchableOpacity>
+              <TouchableOpacity onPress={onToggleSpeaker} style={{padding: 10}}>
+                {isSpeak ? (
+                  <Image
+                    source={require('./images/speaker_selected.png')}
+                    style={styles.icon}
+                  />
+                ) : (
+                  <Image
+                    source={require('./images/speaker.png')}
+                    style={styles.icon}
+                  />
+                )}
+              </TouchableOpacity>
+            </View>
+          )}
+          <View style={styles.toggleButtons}>
+            {isOfferReceiverd && !isAnswerSuccess ? (
+              <TouchableOpacity onPress={onAnswer(false)} style={{padding: 10}}>
+                <Image
+                  source={require('./images/accept_call.png')}
+                  style={styles.icon}
+                />
+              </TouchableOpacity>
+            ) : null}
+            <TouchableOpacity onPress={onReject} style={{padding: 10}}>
+              <Image
+                source={require('./images/end_call.png')}
+                style={styles.icon}
+              />
+            </TouchableOpacity>
+          </View>
+        </View>
+      </View>
+    </Modal>
+  );
+};
+
+CallScreen.propTypes = {};
 
 const styles = StyleSheet.create({
   textWarning: {
-    color: "#FFF",
-    textAlign: "center",
+    color: '#FFF',
+    textAlign: 'center',
     flex: 1,
     paddingHorizontal: 10,
     paddingTop: 20,
   },
   groupLocalSteam: {
-    height: "30%",
-    width: "40%",
+    height: '30%',
+    width: '40%',
     borderRadius: 5,
-    alignSelf: "flex-end",
+    alignSelf: 'flex-end',
     marginRight: 5,
     zIndex: 10,
   },
@@ -790,17 +713,17 @@ const styles = StyleSheet.create({
   },
   buttonSwitch: {
     padding: 10,
-    position: "absolute",
+    position: 'absolute',
     bottom: 10,
     marginBottom: 10,
-    alignSelf: "center",
+    alignSelf: 'center',
   },
   iconSwitch: {
     height: 40,
     width: 40,
   },
   container: {
-    backgroundColor: "#313131",
+    backgroundColor: '#313131',
     // justifyContent: 'space-between',
     // alignItems: 'center',
     flex: 1,
@@ -813,13 +736,13 @@ const styles = StyleSheet.create({
     // backgroundColor: 'black',
   },
   rtc: {
-    width: "100%",
-    height: "100%",
+    width: '100%',
+    height: '100%',
   },
   toggleButtons: {
-    width: "100%",
-    flexDirection: "row",
-    justifyContent: "space-around",
+    width: '100%',
+    flexDirection: 'row',
+    justifyContent: 'space-around',
   },
 });
 
