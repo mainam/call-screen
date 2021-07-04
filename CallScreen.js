@@ -1,11 +1,17 @@
-import React, {useState, useRef, useEffect, forwardRef, useImperativeHandle} from 'react';
+import React, {
+  useState,
+  useRef,
+  useEffect,
+  forwardRef,
+  useImperativeHandle,
+} from "react";
 import {
   RTCPeerConnection,
   RTCView,
   mediaDevices,
   RTCIceCandidate,
   RTCSessionDescription,
-} from 'react-native-webrtc';
+} from "react-native-webrtc";
 
 import {
   View,
@@ -18,22 +24,23 @@ import {
   Modal,
   Vibration,
   AppState,
-} from 'react-native';
-import InCallManager from 'react-native-incall-manager';
-import constants from './constants';
-import VoipPushNotification from 'react-native-voip-push-notification';
-import RNCallKeep from 'react-native-callkeep';
-import Timer from './Timer';
-import soundUtils from './utils/sound-utils';
-import BandwidthHandler from './BandwidthHandler';
-import stringUtils from 'mainam-react-native-string-utils';
-import CallManager from './CallManager';
-import {NativeModules} from 'react-native';
-import PropTypes from 'prop-types';
+  Alert,
+} from "react-native";
+import InCallManager from "react-native-incall-manager";
+import constants from "./constants";
+import VoipPushNotification from "react-native-voip-push-notification";
+import RNCallKeep from "react-native-callkeep";
+import Timer from "./Timer";
+import soundUtils from "./utils/sound-utils";
+import BandwidthHandler from "./BandwidthHandler";
+import stringUtils from "mainam-react-native-string-utils";
+import CallManager from "./CallManager";
+import { NativeModules } from "react-native";
+import PropTypes from "prop-types";
 
-const {VideoCallModule} = NativeModules;
+const { VideoCallModule } = NativeModules;
 
-const {height} = Dimensions.get('screen');
+const { height } = Dimensions.get("screen");
 
 const ONE_SECOND_IN_MS = 1000;
 
@@ -44,7 +51,7 @@ const PATTERN = [
 ];
 const isFront = true; // Use Front camera?
 
-const CallScreen = (props,ref) => {
+const CallScreen = (props, ref) => {
   const refCallId = useRef(null);
   const refOffer = useRef(null);
   const refPeer = useRef(null);
@@ -64,23 +71,23 @@ const CallScreen = (props,ref) => {
   const refOfferReceiverd = useRef(null);
   const refMakeCall = useRef(false);
   const [remoteStreamURL, setRemoteStreamURL] = useState(false);
-  const [isMuted, setMute] = useState(false);  
-  const [isSpeak, setSpeak] = useState(true);  
-  const [isOfferReceiverd,setOfferReceiverd] = useState(false);
-  const [isAnswerSuccess,setAnswerSuccess] = useState(false);
-  const [isVisible,setVisible] = useState(false);
+  const [isMuted, setMute] = useState(false);
+  const [isSpeak, setSpeak] = useState(true);
+  const [isOfferReceiverd, setOfferReceiverd] = useState(false);
+  const [isAnswerSuccess, setAnswerSuccess] = useState(false);
+  const [isVisible, setVisible] = useState(false);
 
   useEffect(() => {
     addEventCallKeep();
     registerSocket();
-    AppState.addEventListener('change', handleAppStateChange);
+    AppState.addEventListener("change", handleAppStateChange);
     return () => {
       removeEventCallKeep();
-      AppState.removeEventListener('change', handleAppStateChange);
+      AppState.removeEventListener("change", handleAppStateChange);
     };
   }, []);
   useImperativeHandle(ref, () => ({
-    startCall
+    startCall,
   }));
   useEffect(() => {
     if (refLoginToken.current != props.loginToken) {
@@ -89,23 +96,23 @@ const CallScreen = (props,ref) => {
       if (!props.loginToken) {
         refSocket.current?.emit(
           constants.socket_type.DISCONNECT,
-          {token: refDeviceToken.current, platform: Platform.OS},
-          data => {
+          { token: refDeviceToken.current, platform: Platform.OS },
+          (data) => {
             refSocket.current.disconnect();
             refSocket.current = null;
-          },
+          }
         );
       } else {
         registerSocket();
       }
     }
   }, [props.loginToken]);
-  const handleAppStateChange = nextAppState => {
+  const handleAppStateChange = (nextAppState) => {
     if (
       refAppState.current.match(/inactive|background/) &&
-      nextAppState === 'active'
+      nextAppState === "active"
     ) {
-      console.log('App has come to the foreground!');
+      console.log("App has come to the foreground!");
     }
 
     refAppState.current = nextAppState;
@@ -117,10 +124,10 @@ const CallScreen = (props,ref) => {
       } else {
         return refCallingData.current.fromName;
       }
-    } else return '';
+    } else return "";
   };
   const startSound = () => {
-    InCallManager.startRingtone('_BUNDLE_');
+    InCallManager.startRingtone("_BUNDLE_");
     Vibration.vibrate(PATTERN, true);
   };
   const stopSound = () => {
@@ -131,11 +138,11 @@ const CallScreen = (props,ref) => {
 
   const getVideoDevice = () => {
     return new Promise((resolve, reject) => {
-      const facing = isFront ? 'front' : 'environment';
+      const facing = isFront ? "front" : "environment";
       try {
-        mediaDevices.enumerateDevices().then(devices => {
+        mediaDevices.enumerateDevices().then((devices) => {
           const videoSourceId = devices.find(
-            device => device.kind === 'videoinput' && device.facing === facing,
+            (device) => device.kind === "videoinput" && device.facing === facing
           );
           if (videoSourceId) resolve(videoSourceId);
           reject(null);
@@ -149,8 +156,8 @@ const CallScreen = (props,ref) => {
   const setupWebRTC = () => {
     return new Promise((resolve, reject) => {
       getVideoDevice()
-        .then(videoSourceId => {
-          const facingMode = isFront ? 'user' : 'environment';
+        .then((videoSourceId) => {
+          const facingMode = isFront ? "user" : "environment";
           const constraints = {
             audio: true,
             video: {
@@ -160,7 +167,7 @@ const CallScreen = (props,ref) => {
                 minFrameRate: 30,
               },
               facingMode,
-              optional: videoSourceId ? [{sourceId: videoSourceId}] : [],
+              optional: videoSourceId ? [{ sourceId: videoSourceId }] : [],
             },
           };
           const peer = new RTCPeerConnection(CallManager.DEFAULT_ICE);
@@ -170,27 +177,27 @@ const CallScreen = (props,ref) => {
           peer.onicegatheringstatechange = onICEGratherStateChange;
           mediaDevices
             .getUserMedia(constraints)
-            .then(newStream => {
+            .then((newStream) => {
               peer.addStream(newStream);
               refLocalStream.current = newStream;
               refPeer.current = peer;
               resolve(newStream.toURL());
             })
-            .catch(e => {
+            .catch((e) => {
               reject(e);
             });
         })
-        .catch(e => {
+        .catch((e) => {
           reject(e);
         });
     });
   };
 
-  const onICEGratherStateChange = ev => {
+  const onICEGratherStateChange = (ev) => {
     switch (refPeer.current.iceGatheringState) {
-      case 'gathering':
+      case "gathering":
         break;
-      case 'complete':
+      case "complete":
         if (refPendingCandidates.current.length > 0 && refCallId.current) {
           sendMessage(
             refOfferReceiverd.current
@@ -204,7 +211,7 @@ const CallScreen = (props,ref) => {
               sdp: refOffer.current,
               from: props.userId,
               data: refCallingData.current,
-            },
+            }
           );
         } else {
           //
@@ -214,7 +221,7 @@ const CallScreen = (props,ref) => {
         break;
     }
   };
-  const startCall = async ({from, fromName, to, toName} = {}) => {
+  const startCall = async ({ from, fromName, to, toName } = {}) => {
     try {
       refCallId.current = stringUtils.guid();
       console.log(refCallId.current);
@@ -225,18 +232,17 @@ const CallScreen = (props,ref) => {
         toName,
       }),
         (refCallingParter.current = to);
-        setupWebRTC().then(localStreamURL => {
-          refPeer.current.createOffer().then(offer => {
-            refOffer.current = offer;
-            refPeer.current.setLocalDescription(offer).then(s => {
-              // InCallManager.start({media: 'audio', ringback: '_BUNDLE_'});
-              soundUtils.play('call_phone.mp3'); //bật âm thanh đang chờ bắt mày
-              refMakeCall.current=false;
-              setVisible(true);
-            });
+      setupWebRTC().then((localStreamURL) => {
+        refPeer.current.createOffer().then((offer) => {
+          refOffer.current = offer;
+          refPeer.current.setLocalDescription(offer).then((s) => {
+            // InCallManager.start({media: 'audio', ringback: '_BUNDLE_'});
+            soundUtils.play("call_phone.mp3"); //bật âm thanh đang chờ bắt mày
+            refMakeCall.current = false;
+            setVisible(true);
           });
         });
-  
+      });
 
       // Create Offer
     } catch (e) {}
@@ -245,7 +251,7 @@ const CallScreen = (props,ref) => {
     if (refLocalStream.current) {
       refLocalStream.current
         .getVideoTracks()
-        .forEach(track => track._switchCamera());
+        .forEach((track) => track._switchCamera());
       // setState({ isCamFront: !state.isCamFront });
     }
   };
@@ -258,41 +264,44 @@ const CallScreen = (props,ref) => {
   // Mutes the local's outgoing audio
   const onToggleMute = () => {
     refLocalStream.current &&
-      refLocalStream.current.getAudioTracks().forEach(track => {
+      refLocalStream.current.getAudioTracks().forEach((track) => {
         track.enabled = !track.enabled;
-        setMute(!track.enabled)
+        setMute(!track.enabled);
       });
   };
   const onToggleSpeaker = () => {
     const newValue = !isSpeak;
-    setSpeak(newValue)
+    setSpeak(newValue);
     InCallManager.setForceSpeakerphoneOn(newValue);
   };
-  const onICEConnectionStateChange = e => {
+  const onICEConnectionStateChange = (e) => {
     switch (e.target.iceConnectionState) {
-      case 'completed':
+      case "completed":
         break;
-      case 'connected':
+      case "connected":
         onTimeOut();
-        setAnswerSuccess(true)
+        setAnswerSuccess(true);
         break;
-      case 'closed':
-      case 'disconnected':
+      case "closed":
+      case "disconnected":
         break;
-      case 'failed':
+      case "failed":
         // onReject()
         break;
     }
   };
 
-  const onICECandiate = e => {
-    const {candidate} = e;
+  const onICECandiate = (e) => {
+    const { candidate } = e;
     if (candidate) {
-      refPendingCandidates.current = [...refPendingCandidates.current,candidate];
+      refPendingCandidates.current = [
+        ...refPendingCandidates.current,
+        candidate,
+      ];
     }
   };
 
-  const onAddStream = e => {
+  const onAddStream = (e) => {
     setRemoteStreamURL(e.stream.toURL());
   };
 
@@ -300,28 +309,33 @@ const CallScreen = (props,ref) => {
   //   // AudioSession đã được active, có thể phát nhạc chờ nếu là outgoing call, answer call nếu là incoming call.
   //   onAnswer(true)();
   // };
-  const onCallKeepAnswer = callUUid => {
+  const onCallKeepAnswer = ({callUUID}) => {
     if (refAppState.current.match(/inactive|background/)) {
-      alert('Nhấn Ok để quay lại cuộc gọi');
+      Alert.alert("Thông báo", "Nhấn đồng ý để trở lại cuộc gọi", [
+        { text: "Đồng ý", onPress: () => console.log("OK Pressed") },
+      ]);
+    }else
+    {
+      RNCallKeep.reportEndCallWithUUID(callUUID, 2);
     }
-    onAnswer(true, callUUid)();
+    onAnswer(true, callUUID)();
   };
-  const onCallKeepEndCall = ({callUUid}) => {
+  const onCallKeepEndCall = ({callUUID}) => {
     if (!isAnswerSuccess) onReject();
   };
   const addEventCallKeep = () => {
-    RNCallKeep.addEventListener('answerCall', onCallKeepAnswer);
-    RNCallKeep.addEventListener('endCall', onCallKeepEndCall);
+    RNCallKeep.addEventListener("answerCall", onCallKeepAnswer);
+    RNCallKeep.addEventListener("endCall", onCallKeepEndCall);
   };
   const removeEventCallKeep = () => {
-    RNCallKeep.removeEventListener('answerCall', onCallKeepAnswer);
-    RNCallKeep.removeEventListener('endCall', onCallKeepEndCall);
-    VoipPushNotification.removeEventListener('register');
+    RNCallKeep.removeEventListener("answerCall", onCallKeepAnswer);
+    RNCallKeep.removeEventListener("endCall", onCallKeepEndCall);
+    VoipPushNotification.removeEventListener("register");
   };
   const onOfferReceived = (data = {}) => {
     if (refCallId.current) {
       //Nếu đang trong cuộc gọi thì kêt thúc cuộc gọi
-      console.log('reject-call', data.callId);
+      console.log("reject-call", data.callId);
       RNCallKeep.reportEndCallWithUUID(data.callId, 2);
 
       if (data.callId && VideoCallModule?.reject) {
@@ -346,31 +360,30 @@ const CallScreen = (props,ref) => {
     refCallId.current = data.callId;
     refCallingData.current = data.data || {};
     refCallingParter.current = data.from;
-    refOfferReceiverd.current=true;
+    refOfferReceiverd.current = true;
     setOfferReceiverd(true);
     setupWebRTC()
-      .then(localStreamURL => {
-        if(Platform.OS=="android")
-          startSound(); //nếu là android thì bật chuông báo có cuộc gọi đến //ios thì mặc định có callkeep
+      .then((localStreamURL) => {
+        if (Platform.OS == "android") startSound(); //nếu là android thì bật chuông báo có cuộc gọi đến //ios thì mặc định có callkeep
         setVisible(true);
       })
-      .catch(e => {});
+      .catch((e) => {});
   };
 
-  const onAnswerReceived = async data => {
-    // InCallManager.stopRingback(); //sau khi người dùng bắt máy thì tắt chuông 
+  const onAnswerReceived = async (data) => {
+    // InCallManager.stopRingback(); //sau khi người dùng bắt máy thì tắt chuông
     soundUtils.stop(); //khi người dùng bắt máy thì tắt chuông
     setTimeout(() => {
-      InCallManager.setForceSpeakerphoneOn(true); //bật loa ngoài      
+      InCallManager.setForceSpeakerphoneOn(true); //bật loa ngoài
     }, 2000);
-    const {description, candidates} = data;
+    const { description, candidates } = data;
     description.sdp = BandwidthHandler.getSdp(description.sdp);
     await refPeer.current.setRemoteDescription(
-      new RTCSessionDescription(description),
+      new RTCSessionDescription(description)
     );
-    candidates.forEach(c =>
-      refPeer.current.addIceCandidate(new RTCIceCandidate(c)),
-    );        
+    candidates.forEach((c) =>
+      refPeer.current.addIceCandidate(new RTCIceCandidate(c))
+    );
   };
   const onLeave = (data = {}) => {
     refIgnoreCallIds.current.push(data.callId);
@@ -379,15 +392,15 @@ const CallScreen = (props,ref) => {
     }
 
     if (data.callId == refCallId.current) {
-      let reason = '';
+      let reason = "";
       if (data.status && data.code == 1 && !isAnswerSuccess) {
-        reason = 'Máy bận';
+        reason = "Máy bận";
       } else {
-        reason = 'Kết thúc cuộc gọi';
+        reason = "Kết thúc cuộc gọi";
       }
       handleReject();
       props.onLeave &&
-        props.onLeave({callId: refCallId.current, reason, code: data.code});
+        props.onLeave({ callId: refCallId.current, reason, code: data.code });
     }
     if (data.callId && VideoCallModule?.reject) {
       VideoCallModule.reject(data.callId);
@@ -400,9 +413,10 @@ const CallScreen = (props,ref) => {
         VideoCallModule.reject(refCallId.current);
       }
       if (!refPeer.current) return;
-      // if(callUUid && refCallId.current != callUUid)
-      //   return;
+      if(callUUid && refCallId.current != callUUid)
+        return;
       stopSound();
+
 
       // InCallManager.stopRingtone();
       // Vibration.cancel();
@@ -411,18 +425,19 @@ const CallScreen = (props,ref) => {
       }
 
       await refPeer.current.setRemoteDescription(
-        new RTCSessionDescription(refOffer.current),
+        new RTCSessionDescription(refOffer.current)
       );
       // InCallManager.start({media: 'video'});
       if (Array.isArray(refCandidates.current)) {
-        refCandidates.current.forEach(c =>
-          refPeer.current.addIceCandidate(new RTCIceCandidate(c)),
+        refCandidates.current.forEach((c) =>
+          refPeer.current.addIceCandidate(new RTCIceCandidate(c))
         );
       }
       const answer = await refPeer.current.createAnswer();
       await refPeer.current.setLocalDescription(answer);
 
       setTimeout(() => {
+        InCallManager.start({media: 'audio'});
         InCallManager.setForceSpeakerphoneOn(true);
       }, 2000);
     } catch (error) {
@@ -448,9 +463,9 @@ const CallScreen = (props,ref) => {
     refLocalStream.current = null;
     refCallingParter.current = null;
     refCallingData.current = null;
-    refPendingCandidates.current= [];
-    refOfferReceiverd.current=false;
-    refMakeCall.current=false;
+    refPendingCandidates.current = [];
+    refOfferReceiverd.current = false;
+    refMakeCall.current = false;
     setRemoteStreamURL(null);
     setMute(false);
     setSpeak(true);
@@ -461,18 +476,18 @@ const CallScreen = (props,ref) => {
 
   const sendMessage = (type, msgObj) => {
     if (refSocket.current) {
-      refSocket.current.emit(type, msgObj, data => {});
+      refSocket.current.emit(type, msgObj, (data) => {});
     } else {
       const e = {
-        code: 'websocket_error',
-        message: 'WebSocket state:' + ws.readyState,
+        code: "websocket_error",
+        message: "WebSocket state:" + ws.readyState,
       };
       throw e;
     }
   };
 
   const onReject = () => {
-    props.onLeave && props.onLeave({callId: refCallId.current});
+    props.onLeave && props.onLeave({ callId: refCallId.current });
     let type =
       isAnswerSuccess || refMakeCall.current
         ? constants.socket_type.LEAVE
@@ -489,23 +504,23 @@ const CallScreen = (props,ref) => {
       if (!refSettingCallKeep.current) {
         const options = {
           ios: {
-            appName: 'ISOFHCARE',
+            appName: "ISOFHCARE",
           },
           android: {
-            alertTitle: 'Thông báo',
-            alertDescription: 'Cho phép iSofHcare truy cập cuộc gọi của bạn',
-            cancelButton: 'Huỷ',
-            okButton: 'Đồng ý',
-            imageName: 'ic_launcher',
+            alertTitle: "Thông báo",
+            alertDescription: "Cho phép iSofHcare truy cập cuộc gọi của bạn",
+            cancelButton: "Huỷ",
+            okButton: "Đồng ý",
+            imageName: "ic_launcher",
             // additionalPermissions: [PermissionsAndroid.PERMISSIONS.example]
           },
         };
         RNCallKeep.setup(options)
-          .then(res => {
+          .then((res) => {
             refSettingCallKeep.current = true;
             resolve(res);
           })
-          .catch(err => {
+          .catch((err) => {
             reject(err);
           });
         RNCallKeep.setAvailable(true);
@@ -514,17 +529,17 @@ const CallScreen = (props,ref) => {
       }
     });
   };
-  const onSocketDisconnect = async data2 => {
+  const onSocketDisconnect = async (data2) => {
     refConnected.current = false;
   };
-  const onSocketConnected = async data2 => {
+  const onSocketConnected = async (data2) => {
     try {
       if (refConnected.current) return; // nếu đã connect rồi thì bỏ qua
       refConnected.current = true; //đánh dấu là đã connect
-      if (Platform.OS == 'ios') {
+      if (Platform.OS == "ios") {
         setupCallKeep();
         VoipPushNotification.requestPermissions();
-        VoipPushNotification.addEventListener('register', token => {
+        VoipPushNotification.addEventListener("register", (token) => {
           // send token to your apn provider server
           refDeviceToken.current = token;
           connectToSocket(token);
@@ -549,7 +564,7 @@ const CallScreen = (props,ref) => {
       console.log(error);
     }
   };
-  const connectToSocket = token => {
+  const connectToSocket = (token) => {
     refSocket.current &&
       refSocket.current.emit(constants.socket_type.CONNECT, {
         token,
@@ -562,7 +577,7 @@ const CallScreen = (props,ref) => {
   const registerSocket = () => {
     if (props.loginToken && !refSocket.current) {
       refSocket.current = props.io.connect(CallManager.host, {
-        transports: ['websocket'],
+        transports: ["websocket"],
         query: {
           token: props.loginToken, //verify socket io với login token
         },
@@ -575,7 +590,7 @@ const CallScreen = (props,ref) => {
       refSocket.current.on(constants.socket_type.CONNECT, onSocketConnected);
       refSocket.current.on(
         constants.socket_type.DISCONNECT,
-        onSocketDisconnect,
+        onSocketDisconnect
       );
       refSocket.current.on(constants.socket_type.OFFER, onOfferReceived);
       refSocket.current.on(constants.socket_type.ANSWER, onAnswerReceived);
@@ -589,14 +604,16 @@ const CallScreen = (props,ref) => {
       animated={true}
       animationType="slide"
       transparent={false}
-      visible={isVisible}>
+      visible={isVisible}
+    >
       <View style={styles.container}>
-        <StatusBar translucent={true} backgroundColor={'transparent'} />
+        <StatusBar translucent={true} backgroundColor={"transparent"} />
         <View
           style={[
             styles.rtcview,
-            {height, ...StyleSheet.absoluteFillObject, zIndex: 0},
-          ]}>
+            { height, ...StyleSheet.absoluteFillObject, zIndex: 0 },
+          ]}
+        >
           {remoteStreamURL ? (
             <RTCView
               style={styles.rtc}
@@ -609,7 +626,7 @@ const CallScreen = (props,ref) => {
         </View>
 
         {/* {localPC.current ? <BandWidth localPc={localPC.current} /> : null} */}
-        {refLocalStream.current? (
+        {refLocalStream.current ? (
           <View style={[styles.groupLocalSteam]}>
             <RTCView
               style={[styles.rtc]}
@@ -619,9 +636,10 @@ const CallScreen = (props,ref) => {
             />
             <TouchableOpacity
               onPress={onSwitchCamera}
-              style={styles.buttonSwitch}>
+              style={styles.buttonSwitch}
+            >
               <Image
-                source={require('./images/camera_switch.png')}
+                source={require("./images/camera_switch.png")}
                 style={styles.iconSwitch}
               />
             </TouchableOpacity>
@@ -636,32 +654,36 @@ const CallScreen = (props,ref) => {
         <View
           style={{
             flex: 1,
-            justifyContent: 'flex-end',
-          }}>
+            justifyContent: "flex-end",
+          }}
+        >
           {refLocalStream.current && (refMakeCall.current || isAnswerSuccess) && (
             <View style={styles.toggleButtons}>
-              <TouchableOpacity onPress={onToggleMute} style={{padding: 10}}>
+              <TouchableOpacity onPress={onToggleMute} style={{ padding: 10 }}>
                 {isMuted ? (
                   <Image
-                    source={require('./images/mute_selected.png')}
+                    source={require("./images/mute_selected.png")}
                     style={styles.icon}
                   />
                 ) : (
                   <Image
-                    source={require('./images/mute.png')}
+                    source={require("./images/mute.png")}
                     style={styles.icon}
                   />
                 )}
               </TouchableOpacity>
-              <TouchableOpacity onPress={onToggleSpeaker} style={{padding: 10}}>
+              <TouchableOpacity
+                onPress={onToggleSpeaker}
+                style={{ padding: 10 }}
+              >
                 {isSpeak ? (
                   <Image
-                    source={require('./images/speaker_selected.png')}
+                    source={require("./images/speaker_selected.png")}
                     style={styles.icon}
                   />
                 ) : (
                   <Image
-                    source={require('./images/speaker.png')}
+                    source={require("./images/speaker.png")}
                     style={styles.icon}
                   />
                 )}
@@ -670,16 +692,19 @@ const CallScreen = (props,ref) => {
           )}
           <View style={styles.toggleButtons}>
             {isOfferReceiverd && !isAnswerSuccess ? (
-              <TouchableOpacity onPress={onAnswer(false)} style={{padding: 10}}>
+              <TouchableOpacity
+                onPress={onAnswer(false)}
+                style={{ padding: 10 }}
+              >
                 <Image
-                  source={require('./images/accept_call.png')}
+                  source={require("./images/accept_call.png")}
                   style={styles.icon}
                 />
               </TouchableOpacity>
             ) : null}
-            <TouchableOpacity onPress={onReject} style={{padding: 10}}>
+            <TouchableOpacity onPress={onReject} style={{ padding: 10 }}>
               <Image
-                source={require('./images/end_call.png')}
+                source={require("./images/end_call.png")}
                 style={styles.icon}
               />
             </TouchableOpacity>
@@ -694,17 +719,17 @@ CallScreen.propTypes = {};
 
 const styles = StyleSheet.create({
   textWarning: {
-    color: '#FFF',
-    textAlign: 'center',
+    color: "#FFF",
+    textAlign: "center",
     flex: 1,
     paddingHorizontal: 10,
     paddingTop: 20,
   },
   groupLocalSteam: {
-    height: '30%',
-    width: '40%',
+    height: "30%",
+    width: "40%",
     borderRadius: 5,
-    alignSelf: 'flex-end',
+    alignSelf: "flex-end",
     marginRight: 10,
     marginTop: 10,
     marginBottom: 5,
@@ -716,17 +741,17 @@ const styles = StyleSheet.create({
   },
   buttonSwitch: {
     padding: 10,
-    position: 'absolute',
+    position: "absolute",
     bottom: 10,
     marginBottom: 10,
-    alignSelf: 'center',
+    alignSelf: "center",
   },
   iconSwitch: {
     height: 40,
     width: 40,
   },
   container: {
-    backgroundColor: '#313131',
+    backgroundColor: "#313131",
     // justifyContent: 'space-between',
     // alignItems: 'center',
     flex: 1,
@@ -739,13 +764,13 @@ const styles = StyleSheet.create({
     // backgroundColor: 'black',
   },
   rtc: {
-    width: '100%',
-    height: '100%',
+    width: "100%",
+    height: "100%",
   },
   toggleButtons: {
-    width: '100%',
-    flexDirection: 'row',
-    justifyContent: 'space-around',
+    width: "100%",
+    flexDirection: "row",
+    justifyContent: "space-around",
   },
 });
 
