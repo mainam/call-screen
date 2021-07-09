@@ -316,7 +316,8 @@ const CallScreen = (props, ref) => {
       ]);
     }else
     {
-      RNCallKeep.reportEndCallWithUUID(callUUID, 2);
+      if(Platform.OS=="ios")
+        RNCallKeep.reportEndCallWithUUID(callUUID, 2);
     }
     onAnswer(true, callUUID)();
   };
@@ -324,19 +325,26 @@ const CallScreen = (props, ref) => {
     if (!isAnswerSuccess) onReject();
   };
   const addEventCallKeep = () => {
-    RNCallKeep.addEventListener("answerCall", onCallKeepAnswer);
-    RNCallKeep.addEventListener("endCall", onCallKeepEndCall);
+    if(Platform.OS=="ios")
+    {
+      RNCallKeep.addEventListener("answerCall", onCallKeepAnswer);
+      RNCallKeep.addEventListener("endCall", onCallKeepEndCall);
+    }
   };
   const removeEventCallKeep = () => {
-    RNCallKeep.removeEventListener("answerCall", onCallKeepAnswer);
-    RNCallKeep.removeEventListener("endCall", onCallKeepEndCall);
-    VoipPushNotification.removeEventListener("register");
+    if(Platform.OS=="ios")
+    {
+      RNCallKeep.removeEventListener("answerCall", onCallKeepAnswer);
+      RNCallKeep.removeEventListener("endCall", onCallKeepEndCall);
+      VoipPushNotification.removeEventListener("register");
+    }
   };
   const onOfferReceived = (data = {}) => {
     if (refCallId.current) {
       //Nếu đang trong cuộc gọi thì kêt thúc cuộc gọi
       console.log("reject-call", data.callId);
-      RNCallKeep.reportEndCallWithUUID(data.callId, 2);
+      if(Platform.OS=="ios")
+        RNCallKeep.reportEndCallWithUUID(data.callId, 2);
 
       if (data.callId && VideoCallModule?.reject) {
         VideoCallModule.reject(data.callId);
@@ -421,7 +429,8 @@ const CallScreen = (props, ref) => {
       // InCallManager.stopRingtone();
       // Vibration.cancel();
       if (refCallId.current && !fromCallKeep) {
-        RNCallKeep.reportEndCallWithUUID(refCallId.current, 2);
+        if(Platform.OS=="ios")
+          RNCallKeep.reportEndCallWithUUID(refCallId.current, 2);
       }
 
       await refPeer.current.setRemoteDescription(
@@ -457,7 +466,8 @@ const CallScreen = (props, ref) => {
       refTimeout.current = null;
     }
     if (refCallId.current) {
-      RNCallKeep.reportEndCallWithUUID(refCallId.current, 2);
+      if(Platform.OS=="ios")
+        RNCallKeep.reportEndCallWithUUID(refCallId.current, 2);
     }
     refCallId.current = null;
     refLocalStream.current = null;
@@ -515,15 +525,16 @@ const CallScreen = (props, ref) => {
             // additionalPermissions: [PermissionsAndroid.PERMISSIONS.example]
           },
         };
-        RNCallKeep.setup(options)
-          .then((res) => {
-            refSettingCallKeep.current = true;
-            resolve(res);
-          })
-          .catch((err) => {
-            reject(err);
-          });
-        RNCallKeep.setAvailable(true);
+        if(Platform.OS=="ios")
+          RNCallKeep.setup(options)
+            .then((res) => {
+              refSettingCallKeep.current = true;
+              resolve(res);
+            })
+            .catch((err) => {
+              reject(err);
+            });
+        // RNCallKeep.setAvailable(true);
       } else {
         resolve({});
       }
