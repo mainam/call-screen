@@ -14,6 +14,15 @@ class CallManager {
       //   username: "mainam",
       //   credential: "123456",
       // },
+      {
+        urls: "stun:stun.l.google.com:19302",
+      },
+      {
+        urls: "stun:stun1.l.google.com:19302",
+      },
+      {
+        urls: "stun:stun2.l.google.com:19302",
+      },
     ],
   };
   init(
@@ -26,14 +35,14 @@ class CallManager {
       callingName,
     } = payload || {}
   ) {
-    if(this.hasInited){
+    if (this.hasInited) {
       console.log("CallManager inited");
       return;
     }
-    this.hasInited =true;
+    this.hasInited = true;
     this.DEFAULT_ICE.iceServers = [
-      ...this.DEFAULT_ICE.iceServers,
       ...iceServer,
+      ...this.DEFAULT_ICE.iceServers,
     ];
     this.host = socketHost;
     this.deviceId = deviceId;
