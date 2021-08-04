@@ -82,10 +82,14 @@ const CallScreen = (props, ref) => {
     addEventCallKeep();
     registerSocket();
     AppState.addEventListener("change", handleAppStateChange);
+    if (InCallManager.recordPermission !== 'granted') {
+      InCallManager.requestRecordPermission();
+  }
     return () => {
       removeEventCallKeep();
       AppState.removeEventListener("change", handleAppStateChange);
     };
+    
   }, []);
   useEffect(()=>{
     refUserId.current = props.userId;
@@ -130,15 +134,41 @@ const CallScreen = (props, ref) => {
       }
     } else return "";
   };
+  const incomingSound = ()=>{
+    // InCallManager.startRingtone("_BUNDLE_");
+    // Vibration.vibrate(PATTERN, true);
+  }
+  const outcomingSound = ()=>{
+    soundUtils.play("call_phone.mp3"); //bật âm thanh đang chờ bắt mày
+  }
   const startSound = () => {
-    InCallManager.startRingtone("_BUNDLE_");
-    Vibration.vibrate(PATTERN, true);
+    // InCallManager.startRingtone("_BUNDLE_");
+    // Vibration.vibrate(PATTERN, true);
   };
   const stopSound = () => {
+    soundUtils.stop();
+    // InCallManager.stopRingtone();
+    // InCallManager.stop();
+    // Vibration.cancel();
+  };
+//   stopRingback() {
+//     //utils.timestampedLog('Stop ringback');
+//     InCallManager.stopRingback();
+// }
+
+  const callPickUp = ()=>
+  {
+    InCallManager.stopRingback();
     InCallManager.stopRingtone();
     InCallManager.stop();
     Vibration.cancel();
-  };
+    // setTimeout(() => {
+      InCallManager.start({ media: 'video', auto: true });
+      // InCallManager.start({media: 'audio'});
+      InCallManager.setForceSpeakerphoneOn(true);
+      InCallManager.setSpeakerphoneOn(true);        
+    // }, 2000);
+  }
 
   const getVideoDevice = () => {
     return new Promise((resolve, reject) => {
@@ -232,6 +262,8 @@ const CallScreen = (props, ref) => {
             refCreateOfferOrAnswer.current=false;
             await setupWebRTC();
             setVisible(true);
+            InCallManager.setKeepScreenOn(true);
+            outcomingSound();
             break;
           default: 
             props.onLeave&&props.onLeave({ reason: s.message, code: 0 });
@@ -307,7 +339,7 @@ const CallScreen = (props, ref) => {
     if (candidate) {
       if(!refOfferReceiverd.current)
       {
-        if (!refCreateOfferOrAnswer.current && refCallId.current) {
+        if (!refCreateOfferOrAnswer.current && refCallId.current && candidate.sdpMid == "video") {
           refCreateOfferOrAnswer.current =true;
             fetch(CallManager.host+"/api/call/calling/"+refCallId.current, {
               method: 'PUT', // *GET, POST, PUT, DELETE, etc.
@@ -396,6 +428,7 @@ const CallScreen = (props, ref) => {
     }
   };
   const onOfferReceived = async (data = {}) => {
+    incomingSound();
     // if (refCallId.current) {
     //   //Nếu đang trong cuộc gọi thì kêt thúc cuộc gọi
     //   console.log("reject-call", data.callId);
@@ -428,7 +461,7 @@ const CallScreen = (props, ref) => {
     await setupWebRTC();
     refPeer.current.addIceCandidate(new RTCIceCandidate(data.ice))
     setVisible(true);
-    startSound();
+    // startSound();
   };
 
   const onTimeOutPair = (data = {}) => {
@@ -453,6 +486,7 @@ const CallScreen = (props, ref) => {
       new RTCSessionDescription(data.answer)
     );    
     setAnswerSuccess(true);
+    callPickUp();
   };
   const onLeave = (data = {}) => {
     refIgnoreCallIds.current.push(data.callId);
@@ -474,6 +508,7 @@ const CallScreen = (props, ref) => {
     if (data.callId && VideoCallModule?.reject) {
       VideoCallModule.reject(data.callId);
     }
+    InCallManager.stop();
   };
 
   const onAnswer = (fromCallKeep, callUUid) => async () => {
@@ -502,7 +537,8 @@ const CallScreen = (props, ref) => {
         }
       );
       setAnswerSuccess(true);
-      stopSound();
+      callPickUp();
+      InCallManager.setKeepScreenOn(true);
     } catch (error) {
       console.log(error);
     }
