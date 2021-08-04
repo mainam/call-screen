@@ -52,24 +52,25 @@ const PATTERN = [
 const isFront = true; // Use Front camera?
 
 const CallScreen = (props, ref) => {
+  const refCreateOfferOrAnswer = useRef(null);
   const refCallId = useRef(null);
   const refOffer = useRef(null);
+  const refAnswer = useRef(null);
   const refPeer = useRef(null);
   const refSocket = useRef(null);
-  const refCandidates = useRef(null);
-  const refLocalStream = useRef(null);
   const refConnected = useRef(null);
   const refSettingCallKeep = useRef(null);
   const refDeviceToken = useRef(null);
-  const refCallingParter = useRef(null);
   const refCallingData = useRef(null);
   const refIgnoreCallIds = useRef([]);
   const refAppState = useRef(AppState.currentState);
   const refLoginToken = useRef(null);
+  const refUserId = useRef(null);
   const refTimeout = useRef(null);
   const refPendingCandidates = useRef([]);
   const refOfferReceiverd = useRef(null);
   const refMakeCall = useRef(false);
+  const [localStream, setLocalStream] = useState(false);
   const [remoteStreamURL, setRemoteStreamURL] = useState(false);
   const [isMuted, setMute] = useState(false);
   const [isSpeak, setSpeak] = useState(true);
@@ -86,6 +87,9 @@ const CallScreen = (props, ref) => {
       AppState.removeEventListener("change", handleAppStateChange);
     };
   }, []);
+  useEffect(()=>{
+    refUserId.current = props.userId;
+  },[props.loginToken, props.userId])
   useImperativeHandle(ref, () => ({
     startCall,
   }));
@@ -145,7 +149,7 @@ const CallScreen = (props, ref) => {
             (device) => device.kind === "videoinput" && device.facing === facing
           );
           if (videoSourceId) resolve(videoSourceId);
-          reject(null);
+          else reject(null);
         });
       } catch (error) {
         console.log(error);
@@ -153,107 +157,115 @@ const CallScreen = (props, ref) => {
       }
     });
   };
-  const setupWebRTC = () => {
-    return new Promise((resolve, reject) => {
-      getVideoDevice()
-        .then((videoSourceId) => {
-          const facingMode = isFront ? "user" : "environment";
-          const constraints = {
-            audio: true,
-            video: {
-              mandatory: {
-                minWidth: 500, // Provide your own width, height and frame rate here
-                minHeight: 300,
-                minFrameRate: 30,
-              },
-              facingMode,
-              optional: videoSourceId ? [{ sourceId: videoSourceId }] : [],
+  const createPeer = () => {
+    const peer = new RTCPeerConnection({'iceServers': CallManager.DEFAULT_ICE.iceServers});
+    peer.onicecandidate = onICECandiate;
+    peer.onaddstream = onAddStream;
+    refPeer.current = peer;
+    return peer;
+  };
+
+  const initLocalVideo = () => {
+    return new Promise(async (resolve, reject) => {
+      try {
+        const videoSourceId = await getVideoDevice();
+        const constraints = {
+          audio: true,
+          video: {
+            mandatory: {
+              minWidth: 500, // Provide your own width, height and frame rate here
+              minHeight: 300,
+              minFrameRate: 30,
             },
-          };
-          const peer = new RTCPeerConnection(CallManager.DEFAULT_ICE);
-          peer.oniceconnectionstatechange = onICEConnectionStateChange;
-          peer.onaddstream = onAddStream;
-          peer.onicecandidate = onICECandiate;
-          peer.onicegatheringstatechange = onICEGratherStateChange;
-          mediaDevices
-            .getUserMedia(constraints)
-            .then((newStream) => {
-              peer.addStream(newStream);
-              refLocalStream.current = newStream;
-              refPeer.current = peer;
-              resolve(newStream.toURL());
-            })
-            .catch((e) => {
-              reject(e);
-            });
-        })
-        .catch((e) => {
-          reject(e);
-        });
+            facingMode: isFront ? "user" : "environment",
+            optional: videoSourceId ? [{ sourceId: videoSourceId }] : [],
+          },
+        };
+        const stream = await mediaDevices.getUserMedia(constraints);
+        resolve(stream);
+      } catch (error) {
+        reject(error);
+      }
     });
   };
 
-  const onICEGratherStateChange = (ev) => {
-    switch (refPeer.current.iceGatheringState) {
-      case "gathering":
-        break;
-      case "complete":
-        if (refPendingCandidates.current.length > 0 && refCallId.current) {
-          sendMessage(
-            refOfferReceiverd.current
-              ? constants.socket_type.ANSWER
-              : constants.socket_type.OFFER,
-            {
-              to: refCallingParter.current,
-              description: refPeer.current.localDescription,
-              candidates: refPendingCandidates.current,
-              callId: refCallId.current,
-              sdp: refOffer.current,
-              from: props.userId,
-              data: refCallingData.current,
-            }
-          );
-        } else {
-          //
+  const setupWebRTC = () => {
+    return new Promise(async (resolve, reject) => {
+      try {
+        const stream = await initLocalVideo();
+        setLocalStream(stream);
+        const peer = createPeer();
+        peer.addStream(stream);
+        if(!refOfferReceiverd.current) //chi khi thuc hien cuoc goi thi moi tao offer
+        {
+          const offer = await peer.createOffer();
+          refOffer.current = offer;
+          peer.setLocalDescription(offer)
         }
-        break;
-      default:
-        break;
-    }
+        resolve(stream);
+      } catch (error) {
+        console.log(error);
+        reject(error);
+      }
+    });
   };
+
   const startCall = async ({ from, fromName, to, toName } = {}) => {
     try {
-      refCallId.current = stringUtils.guid();
-      console.log(refCallId.current);
-      (refCallingData.current = {
-        from,
-        fromName,
-        to,
-        toName,
-      }),
-        (refCallingParter.current = to);
-      setupWebRTC().then((localStreamURL) => {
-        refPeer.current.createOffer().then((offer) => {
-          refOffer.current = offer;
-          refPeer.current.setLocalDescription(offer).then((s) => {
-            // InCallManager.start({media: 'audio', ringback: '_BUNDLE_'});
-            soundUtils.play("call_phone.mp3"); //bật âm thanh đang chờ bắt mày
-            refMakeCall.current = false;
+      fetch(CallManager.host+"/api/call/create-call", {
+        method: 'POST', // *GET, POST, PUT, DELETE, etc.
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          from: from,
+          fromName,
+          to: to, 
+          toName,
+        }) // body data type must match "Content-Type" header
+      }).then(s=>s.json()
+      ).then(async s=>{
+        switch(s?.code)
+        {
+          case 0:
+            refCallId.current = s.data.call?.callId;
+            refCreateOfferOrAnswer.current=false;
+            await setupWebRTC();
             setVisible(true);
-          });
-        });
+            break;
+          default: 
+            props.onLeave&&props.onLeave({ reason: s.message, code: 0 });
+        } 
+      }).catch(e=>{
+        props.onLeave&&props.onLeave({reason: e?.message, code: 0 });
       });
+      // createPeer();
+      // return;
+      // refCallId.current = stringUtils.guid();
+      // refCallingData.current = {
+      //   from,
+      //   fromName,
+      //   to,
+      //   toName,
+      // };
+      // refCallingParter.current = to
+      //   // return;
+      // await setupWebRTC();
+      // const offer = await refPeer.current.createOffer();
+      // refOffer.current = offer;
+      // refPeer.current.setLocalDescription(offer).then((s) => {
+      //   // InCallManager.start({media: 'audio', ringback: '_BUNDLE_'});
+      //   soundUtils.play("call_phone.mp3"); //bật âm thanh đang chờ bắt mày
+      //   refMakeCall.current = false;
+      //   setVisible(true);
+      // });
 
       // Create Offer
     } catch (e) {}
   };
   const onSwitchCamera = () => {
-    if (refLocalStream.current) {
-      refLocalStream.current
-        .getVideoTracks()
-        .forEach((track) => track._switchCamera());
-      // setState({ isCamFront: !state.isCamFront });
-    }
+    localStream?.getVideoTracks().forEach((track) => track._switchCamera());
+    // setState({ isCamFront: !state.isCamFront });
   };
   const onTimeOut = () => {
     refTimeout.current = setTimeout(() => {
@@ -263,41 +275,89 @@ const CallScreen = (props, ref) => {
 
   // Mutes the local's outgoing audio
   const onToggleMute = () => {
-    refLocalStream.current &&
-      refLocalStream.current.getAudioTracks().forEach((track) => {
-        track.enabled = !track.enabled;
-        setMute(!track.enabled);
-      });
+    localStream?.getAudioTracks().forEach((track) => {
+      track.enabled = !track.enabled;
+      setMute(!track.enabled);
+    });
   };
   const onToggleSpeaker = () => {
     const newValue = !isSpeak;
     setSpeak(newValue);
     InCallManager.setForceSpeakerphoneOn(newValue);
   };
-  const onICEConnectionStateChange = (e) => {
-    switch (e.target.iceConnectionState) {
-      case "completed":
-        break;
-      case "connected":
-        onTimeOut();
-        setAnswerSuccess(true);
-        break;
-      case "closed":
-      case "disconnected":
-        break;
-      case "failed":
-        // onReject()
-        break;
-    }
-  };
+  // const onICEConnectionStateChange = (e) => {
+  //   switch (e.target.iceConnectionState) {
+  //     case "completed":
+  //       break;
+  //     case "connected":
+  //       onTimeOut();
+  //       setAnswerSuccess(true);
+  //       break;
+  //     case "closed":
+  //     case "disconnected":
+  //       break;
+  //     case "failed":
+  //       // onReject()
+  //       break;
+  //   }
+  // };
 
   const onICECandiate = (e) => {
     const { candidate } = e;
     if (candidate) {
-      refPendingCandidates.current = [
-        ...refPendingCandidates.current,
-        candidate,
-      ];
+      if(!refOfferReceiverd.current)
+      {
+        if (!refCreateOfferOrAnswer.current && refCallId.current) {
+          refCreateOfferOrAnswer.current =true;
+            fetch(CallManager.host+"/api/call/calling/"+refCallId.current, {
+              method: 'PUT', // *GET, POST, PUT, DELETE, etc.
+              headers: {
+                'Content-Type': 'application/json'
+              }, // body data type must match "Content-Type" header
+              body: JSON.stringify({
+                userId: refUserId.current,
+                ice: candidate,
+                offer: refOffer.current
+              }) 
+            },).then(s=>s.json()
+            ).then(s=>{
+              switch(s?.code)
+              {
+                case 0:
+                  break;
+                default: 
+                  props.onLeave&&props.onLeave({ reason: s.message, code: 0 });
+              } 
+            }).catch(e=>{
+              props.onLeave&&props.onLeave({reason: e?.message, code: 0 });
+            });    
+          // sendMessage(
+          //   refOfferReceiverd.current
+          //     ? constants.socket_type.ANSWER
+          //     : constants.socket_type.OFFER,
+          //   {
+          //     to: refCallingParter.current,
+          //     ices: [{ userId: props.userId, ice: candidate }],
+          //     // description: refPeer.current.localDescription,
+          //     // candidates: refPendingCandidates.current,
+          //     callId: refCallId.current,
+          //     // sdp: refOffer.current,
+          //     from: props.userId,
+          //     data: refCallingData.current,
+          //   }
+          // );
+          // refCreateOfferOrAnswer.current = true;
+          // refPendingCandidates.current.push(candidate);
+        }
+      }else
+      {
+          sendMessage(constants.socket_type.CANDIDATE,
+          {
+            userId: props.userId,
+            ice: candidate,
+            callId: refCallId.current,
+          });
+      }      
     }
   };
 
@@ -309,89 +369,90 @@ const CallScreen = (props, ref) => {
   //   // AudioSession đã được active, có thể phát nhạc chờ nếu là outgoing call, answer call nếu là incoming call.
   //   onAnswer(true)();
   // };
-  const onCallKeepAnswer = ({callUUID}) => {
+  const onCallKeepAnswer = ({ callUUID }) => {
     if (refAppState.current.match(/inactive|background/)) {
       Alert.alert("Thông báo", "Nhấn đồng ý để trở lại cuộc gọi", [
         { text: "Đồng ý", onPress: () => console.log("OK Pressed") },
       ]);
-    }else
-    {
-      if(Platform.OS=="ios")
-        RNCallKeep.reportEndCallWithUUID(callUUID, 2);
+    } else {
+      if (Platform.OS == "ios") RNCallKeep.reportEndCallWithUUID(callUUID, 2);
     }
     onAnswer(true, callUUID)();
   };
-  const onCallKeepEndCall = ({callUUID}) => {
+  const onCallKeepEndCall = ({ callUUID }) => {
     if (!isAnswerSuccess) onReject();
   };
   const addEventCallKeep = () => {
-    if(Platform.OS=="ios")
-    {
+    if (Platform.OS == "ios") {
       RNCallKeep.addEventListener("answerCall", onCallKeepAnswer);
       RNCallKeep.addEventListener("endCall", onCallKeepEndCall);
     }
   };
   const removeEventCallKeep = () => {
-    if(Platform.OS=="ios")
-    {
+    if (Platform.OS == "ios") {
       RNCallKeep.removeEventListener("answerCall", onCallKeepAnswer);
       RNCallKeep.removeEventListener("endCall", onCallKeepEndCall);
       VoipPushNotification.removeEventListener("register");
     }
   };
-  const onOfferReceived = (data = {}) => {
-    if (refCallId.current) {
-      //Nếu đang trong cuộc gọi thì kêt thúc cuộc gọi
-      console.log("reject-call", data.callId);
-      if(Platform.OS=="ios")
-        RNCallKeep.reportEndCallWithUUID(data.callId, 2);
+  const onOfferReceived = async (data = {}) => {
+    // if (refCallId.current) {
+    //   //Nếu đang trong cuộc gọi thì kêt thúc cuộc gọi
+    //   console.log("reject-call", data.callId);
+    //   if (Platform.OS == "ios")
+    //     RNCallKeep.reportEndCallWithUUID(data.callId, 2);
 
-      if (data.callId && VideoCallModule?.reject) {
-        VideoCallModule.reject(data.callId);
-      }
-      refSocket.current.emit(constants.socket_type.LEAVE, {
-        to: data.from,
-        callId: data.callId, // state.callId,
-        type: constants.socket_type.REJECT,
-      });
-      return;
-    }
-    if (
-      data.from == props.userId ||
-      refIgnoreCallIds.current.includes(data.callId)
-    ) {
-      //nếu offer nhận được được thực hiện từ chính bạn thì bỏ qua
-      return;
-    }
-    refOffer.current = data.description;
-    refCandidates.current = data.candidates;
+    //   if (data.callId && VideoCallModule?.reject) {
+    //     VideoCallModule.reject(data.callId);
+    //   }
+    //   refSocket.current.emit(constants.socket_type.LEAVE, {
+    //     to: data.from,
+    //     callId: data.callId, // state.callId,
+    //     type: constants.socket_type.REJECT,
+    //   });
+    //   return;
+    // }
+    // if (
+    //   data.from == props.userId ||
+    //   refIgnoreCallIds.current.includes(data.callId)
+    // ) {
+    //   //nếu offer nhận được được thực hiện từ chính bạn thì bỏ qua
+    //   return;
+    // }
+    refOffer.current = data.offer;
     refCallId.current = data.callId;
     refCallingData.current = data.data || {};
-    refCallingParter.current = data.from;
     refOfferReceiverd.current = true;
     setOfferReceiverd(true);
-    setupWebRTC()
-      .then((localStreamURL) => {
-        if (Platform.OS == "android") startSound(); //nếu là android thì bật chuông báo có cuộc gọi đến //ios thì mặc định có callkeep
-        setVisible(true);
-      })
-      .catch((e) => {});
+    refCreateOfferOrAnswer.current=false;
+    await setupWebRTC();
+    refPeer.current.addIceCandidate(new RTCIceCandidate(data.ice))
+    setVisible(true);
+    startSound();
+  };
+
+  const onTimeOutPair = (data = {}) => {
+  };
+  const onCandidate = async (data = {}) => {
+    if(refPeer.current && data.callId == refCallId.current && data.ice)
+    {
+      if(data.ice.sdp)
+      {
+        await refPeer.current.setRemoteDescription(
+          new RTCSessionDescription(data.ice)
+        );    
+      }else
+      {
+        refPeer.current.addIceCandidate(new RTCIceCandidate(data.ice))
+      }
+    }    
   };
 
   const onAnswerReceived = async (data) => {
-    // InCallManager.stopRingback(); //sau khi người dùng bắt máy thì tắt chuông
-    soundUtils.stop(); //khi người dùng bắt máy thì tắt chuông
-    setTimeout(() => {
-      InCallManager.setForceSpeakerphoneOn(true); //bật loa ngoài
-    }, 2000);
-    const { description, candidates } = data;
-    description.sdp = BandwidthHandler.getSdp(description.sdp);
     await refPeer.current.setRemoteDescription(
-      new RTCSessionDescription(description)
-    );
-    candidates.forEach((c) =>
-      refPeer.current.addIceCandidate(new RTCIceCandidate(c))
-    );
+      new RTCSessionDescription(data.answer)
+    );    
+    setAnswerSuccess(true);
   };
   const onLeave = (data = {}) => {
     refIgnoreCallIds.current.push(data.callId);
@@ -421,34 +482,27 @@ const CallScreen = (props, ref) => {
         VideoCallModule.reject(refCallId.current);
       }
       if (!refPeer.current) return;
-      if(callUUid && refCallId.current != callUUid)
-        return;
-      stopSound();
-
-
-      // InCallManager.stopRingtone();
-      // Vibration.cancel();
+      if (callUUid && refCallId.current != callUUid) return;
       if (refCallId.current && !fromCallKeep) {
-        if(Platform.OS=="ios")
+        if (Platform.OS == "ios")
           RNCallKeep.reportEndCallWithUUID(refCallId.current, 2);
       }
-
       await refPeer.current.setRemoteDescription(
         new RTCSessionDescription(refOffer.current)
       );
-      // InCallManager.start({media: 'video'});
-      if (Array.isArray(refCandidates.current)) {
-        refCandidates.current.forEach((c) =>
-          refPeer.current.addIceCandidate(new RTCIceCandidate(c))
-        );
-      }
       const answer = await refPeer.current.createAnswer();
+      refAnswer.current=answer;
       await refPeer.current.setLocalDescription(answer);
-
-      setTimeout(() => {
-        InCallManager.start({media: 'audio'});
-        InCallManager.setForceSpeakerphoneOn(true);
-      }, 2000);
+      sendMessage(constants.socket_type.ANSWER,
+      {
+          callId: refCallId.current,
+          answer: answer,
+          userId: props.userId,
+          data: refCallingData.current,
+        }
+      );
+      setAnswerSuccess(true);
+      stopSound();
     } catch (error) {
       console.log(error);
     }
@@ -466,16 +520,19 @@ const CallScreen = (props, ref) => {
       refTimeout.current = null;
     }
     if (refCallId.current) {
-      if(Platform.OS=="ios")
+      if (Platform.OS == "ios")
         RNCallKeep.reportEndCallWithUUID(refCallId.current, 2);
     }
     refCallId.current = null;
-    refLocalStream.current = null;
-    refCallingParter.current = null;
     refCallingData.current = null;
-    refPendingCandidates.current = [];
+    // refPendingCandidates.current = [];
     refOfferReceiverd.current = false;
+    refCreateOfferOrAnswer.current = false;
+    refOffer.current=null
+    refAnswer.current=null;
+    refPeer.current=null;
     refMakeCall.current = false;
+    setLocalStream(null);
     setRemoteStreamURL(null);
     setMute(false);
     setSpeak(true);
@@ -503,7 +560,7 @@ const CallScreen = (props, ref) => {
         ? constants.socket_type.LEAVE
         : constants.socket_type.REJECT;
     refSocket.current.emit(constants.socket_type.LEAVE, {
-      to: refCallingParter.current,
+      userId: props.userId,
       callId: refCallId.current, // state.callId,
       type,
     });
@@ -525,7 +582,7 @@ const CallScreen = (props, ref) => {
             // additionalPermissions: [PermissionsAndroid.PERMISSIONS.example]
           },
         };
-        if(Platform.OS=="ios")
+        if (Platform.OS == "ios")
           RNCallKeep.setup(options)
             .then((res) => {
               refSettingCallKeep.current = true;
@@ -590,7 +647,8 @@ const CallScreen = (props, ref) => {
       refSocket.current = props.io.connect(CallManager.host, {
         transports: ["websocket"],
         query: {
-          token: props.loginToken, //verify socket io với login token
+          token: props.loginToken, //verify socket io với login token,
+          userId: props.userId
         },
         upgrade: true,
         reconnection: true,
@@ -603,6 +661,8 @@ const CallScreen = (props, ref) => {
         constants.socket_type.DISCONNECT,
         onSocketDisconnect
       );
+      refSocket.current.on(constants.socket_type.CANDIDATE, onCandidate);
+      refSocket.current.on(constants.socket_type.TIMEOUT_PAIR, onTimeOutPair);
       refSocket.current.on(constants.socket_type.OFFER, onOfferReceived);
       refSocket.current.on(constants.socket_type.ANSWER, onAnswerReceived);
       refSocket.current.on(constants.socket_type.LEAVE, onLeave);
@@ -637,13 +697,13 @@ const CallScreen = (props, ref) => {
         </View>
 
         {/* {localPC.current ? <BandWidth localPc={localPC.current} /> : null} */}
-        {refLocalStream.current ? (
+        {localStream && localStream.toURL && (
           <View style={[styles.groupLocalSteam]}>
             <RTCView
               style={[styles.rtc]}
               zOrder={1}
               // mirror={isCamFront}
-              streamURL={refLocalStream.current.toURL()}
+              streamURL={localStream.toURL()}
             />
             <TouchableOpacity
               onPress={onSwitchCamera}
@@ -655,7 +715,7 @@ const CallScreen = (props, ref) => {
               />
             </TouchableOpacity>
           </View>
-        ) : null}
+        )}
         <Timer
           data={{
             mediaConnected: isAnswerSuccess,
@@ -668,7 +728,7 @@ const CallScreen = (props, ref) => {
             justifyContent: "flex-end",
           }}
         >
-          {refLocalStream.current && (refMakeCall.current || isAnswerSuccess) && (
+          {localStream && (refMakeCall.current || isAnswerSuccess) && (
             <View style={styles.toggleButtons}>
               <TouchableOpacity onPress={onToggleMute} style={{ padding: 10 }}>
                 {isMuted ? (
