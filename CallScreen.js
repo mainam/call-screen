@@ -66,7 +66,6 @@ const CallScreen = (props, ref) => {
   const refLoginToken = useRef(null);
   const refUserId = useRef(null);
   const refTimeout = useRef(null);
-  const refPendingCandidates = useRef([]);
   const refOfferReceiverd = useRef(null);
   const refMakeCall = useRef(false);
   const refOfferData = useRef(null);
@@ -140,28 +139,25 @@ const CallScreen = (props, ref) => {
   const outcomingSound = () => {
     soundUtils.play("call_phone.mp3"); //bật âm thanh đang chờ bắt mày
   };
-  const startSound = () => {
-    InCallManager.startRingtone("_BUNDLE_");
-    Vibration.vibrate(PATTERN, true);
-  };
+
   const stopSound = () => {
     soundUtils.stop();
+    InCallManager.stopRingback();
     InCallManager.stopRingtone();
     InCallManager.stop();
     Vibration.cancel();
   };
 
   const callPickUp = () => {
+    soundUtils.stop();
     InCallManager.stopRingback();
     InCallManager.stopRingtone();
     InCallManager.stop();
     Vibration.cancel();
-    // setTimeout(() => {
     InCallManager.start({ media: "video", auto: true });
-    // InCallManager.start({media: 'audio'});
     InCallManager.setForceSpeakerphoneOn(true);
     InCallManager.setSpeakerphoneOn(true);
-    // }, 2000);
+    InCallManager.setKeepScreenOn(true);
   };
 
   const getVideoDevice = () => {
@@ -275,7 +271,6 @@ const CallScreen = (props, ref) => {
   const onSwitchCamera = () => {
     if (localStream?.getVideoTracks)
       localStream?.getVideoTracks().forEach((track) => track._switchCamera());
-    debugger;
   };
   const onTimeOut = () => {
     refTimeout.current = setTimeout(() => {
@@ -295,22 +290,6 @@ const CallScreen = (props, ref) => {
     setSpeak(newValue);
     InCallManager.setForceSpeakerphoneOn(newValue);
   };
-  // const onICEConnectionStateChange = (e) => {
-  //   switch (e.target.iceConnectionState) {
-  //     case "completed":
-  //       break;
-  //     case "connected":
-  //       onTimeOut();
-  //       setAnswerSuccess(true);
-  //       break;
-  //     case "closed":
-  //     case "disconnected":
-  //       break;
-  //     case "failed":
-  //       // onReject()
-  //       break;
-  //   }
-  // };
 
   const onICECandiate = (e) => {
     const { candidate } = e;
@@ -346,23 +325,6 @@ const CallScreen = (props, ref) => {
             .catch((e) => {
               props.onLeave && props.onLeave({ reason: e?.message, code: 0 });
             });
-          // sendMessage(
-          //   refOfferReceiverd.current
-          //     ? constants.socket_type.ANSWER
-          //     : constants.socket_type.OFFER,
-          //   {
-          //     to: refCallingParter.current,
-          //     ices: [{ userId: props.userId, ice: candidate }],
-          //     // description: refPeer.current.localDescription,
-          //     // candidates: refPendingCandidates.current,
-          //     callId: refCallId.current,
-          //     // sdp: refOffer.current,
-          //     from: props.userId,
-          //     data: refCallingData.current,
-          //   }
-          // );
-          // refCreateOfferOrAnswer.current = true;
-          // refPendingCandidates.current.push(candidate);
         }
       } else {
         sendMessage(constants.socket_type.CANDIDATE, {
@@ -378,20 +340,13 @@ const CallScreen = (props, ref) => {
     setRemoteStreamURL(e.stream.toURL());
   };
 
-  //const onRNCallKitDidActivateAudioSession = (data) => {
-  //   // AudioSession đã được active, có thể phát nhạc chờ nếu là outgoing call, answer call nếu là incoming call.
-  //   onAnswer(true)();
-  // };
   const onCallKeepAnswer = ({ callUUID }) => {
     if (refAppState.current.match(/inactive|background/)) {
       setVisible(true);
-      // Alert.alert("Thông báo", "Nhấn đồng ý để trở lại cuộc gọi", [
-      //   { text: "Đồng ý", onPress: () => console.log("OK Pressed") },
-      // ]);
     } else {
       if (Platform.OS == "ios") RNCallKeep.reportEndCallWithUUID(callUUID, 2);
     }
-    onAnswer(true, callUUID)();
+    onAnswer(callUUID)();
   };
   const onCallKeepEndCall = ({ callUUID }) => {
     if (!refCallId.current) refCallId.callId = callUUID;
@@ -421,6 +376,7 @@ const CallScreen = (props, ref) => {
 
       refSocket.current.emit(constants.socket_type.LEAVE, {
         callId: data.callId, // state.callId,
+        userId: props.userId,
         type: constants.socket_type.BUSY,
       });
       return;
@@ -476,7 +432,6 @@ const CallScreen = (props, ref) => {
     }
 
     if (data.callId == refCallId.current) {
-      stopSound();
       let reason = "";
       if (data.status && data.code == 1 && !isAnswerSuccess) {
         reason = "Máy bận";
@@ -490,56 +445,59 @@ const CallScreen = (props, ref) => {
     if (data.callId && VideoCallModule?.reject) {
       VideoCallModule.reject(data.callId);
     }
-    InCallManager.stop();
   };
 
-  const onAnswer = (fromCallKeep, callUUid) => async () => {
+  const onAnswer = (callUUid) => async () => {
     try {
-      const data = refOfferData.current;
-      refOffer.current = refOfferData.current?.offer;
-      refCallingData.current = refOfferData.current?.data || {};
-      refCreateOfferOrAnswer.current = false;
-      await setupWebRTC();
-      refPeer.current.addIceCandidate(
-        new RTCIceCandidate(refOfferData.current?.ice)
-      );
-      refOffer.current = data.offer;
-      if (refCallId.current && VideoCallModule?.reject) {
-        VideoCallModule.reject(refCallId.current);
-      }
-      if (!refPeer.current) return;
-      if (callUUid && refCallId.current != callUUid) return;
+      setAnswerSuccess(true);
+      const answer = async () => {
+        const data = refOfferData.current;
+        refOffer.current = refOfferData.current?.offer;
+        refCallingData.current = refOfferData.current?.data || {};
+        refCreateOfferOrAnswer.current = false;
+        await setupWebRTC();
+        refPeer.current.addIceCandidate(
+          new RTCIceCandidate(refOfferData.current?.ice)
+        );
+        refOffer.current = data.offer;
+        if (refCallId.current && VideoCallModule?.reject) {
+          VideoCallModule.reject(refCallId.current);
+        }
+        if (!refPeer.current) return;
+        if (callUUid && refCallId.current != callUUid) return;
+        await refPeer.current.setRemoteDescription(
+          new RTCSessionDescription(refOffer.current)
+        );
+        const answer = await refPeer.current.createAnswer();
+        refAnswer.current = answer;
+        await refPeer.current.setLocalDescription(answer);
+        sendMessage(constants.socket_type.ANSWER, {
+          callId: refCallId.current,
+          answer: answer,
+          userId: props.userId,
+          data: refCallingData.current,
+        });
+        if (!isVisible) setVisible(true);
+        callPickUp();
+      };
+
       if (Platform.OS == "ios") {
         RNCallKeep.reportEndCallWithUUID(refCallId.current, 2);
+        setTimeout(answer, 1000);
+      } else {
+        answer();
       }
-      await refPeer.current.setRemoteDescription(
-        new RTCSessionDescription(refOffer.current)
-      );
-      const answer = await refPeer.current.createAnswer();
-      refAnswer.current = answer;
-      await refPeer.current.setLocalDescription(answer);
-      sendMessage(constants.socket_type.ANSWER, {
-        callId: refCallId.current,
-        answer: answer,
-        userId: props.userId,
-        data: refCallingData.current,
-      });
-      setAnswerSuccess(true);
-      callPickUp();
-      InCallManager.setKeepScreenOn(true);
-      if (!isVisible) setVisible(true);
     } catch (error) {
       console.log(error);
     }
   };
 
   const handleReject = () => {
+    stopSound();
     if (refCallId.current && VideoCallModule?.reject) {
       VideoCallModule.reject(refCallId.current);
     }
     if (refPeer.current) refPeer.current.close();
-    soundUtils.stop();
-    stopSound();
     if (refTimeout.current) {
       clearTimeout(refTimeout.current);
       refTimeout.current = null;
@@ -547,6 +505,7 @@ const CallScreen = (props, ref) => {
     if (refCallId.current) {
       if (Platform.OS == "ios")
         RNCallKeep.reportEndCallWithUUID(refCallId.current, 2);
+      debugger;
     }
     refCallId.current = null;
     refCallingData.current = null;
@@ -579,7 +538,6 @@ const CallScreen = (props, ref) => {
   };
 
   const onReject = () => {
-    stopSound();
     props.onLeave && props.onLeave({ callId: refCallId.current });
     let type =
       isAnswerSuccess || refMakeCall.current
@@ -634,20 +592,9 @@ const CallScreen = (props, ref) => {
         setupCallKeep();
         VoipPushNotification.requestPermissions();
         VoipPushNotification.addEventListener("register", (token) => {
-          // send token to your apn provider server
           refDeviceToken.current = token;
           connectToSocket(token);
         });
-        // VoipPushNotification.registerVoipToken();
-        // VoipPushNotification.addEventListener('notification', notification => {
-        //   // Handle incoming pushes
-        //   if (!refCallId.current) {
-        //     refCallId.current = notification.getData().data.UUID;
-        //   } else {
-        //     // if Callkit already exists then end Callkit wiht the callKitUUID
-        //     RNCallKeep.endCall(refCallId.current);
-        //   }
-        // });
         VoipPushNotification.registerVoipToken();
       } else {
         const token = await CallManager.firebase.messaging().getToken();
@@ -696,68 +643,71 @@ const CallScreen = (props, ref) => {
     }
   };
 
-  const buttonEndCall = useMemo(
+  const buttonEndCall = (
+    <View style={{ flex: 1, alignItems: "center" }}>
+      <TouchableOpacity onPress={onReject} style={{ padding: 10, flex: 1 }}>
+        <Image source={require("./images/end_call.png")} style={styles.icon} />
+      </TouchableOpacity>
+    </View>
+  );
+
+  const buttonAcceptCall = isOfferReceiverd && !isAnswerSuccess && (
+    <View style={{ flex: 1, alignItems: "center" }}>
+      <TouchableOpacity onPress={onAnswer()} style={{ padding: 10, flex: 1 }}>
+        <Image
+          source={require("./images/accept_call.png")}
+          style={styles.icon}
+        />
+      </TouchableOpacity>
+    </View>
+  );
+
+  const buttonSpeaker = useMemo(
+    () =>
+      isAnswerSuccess && (
+        <View style={{ flex: 1, alignItems: "center" }}>
+          <TouchableOpacity onPress={onToggleSpeaker} style={{ padding: 10 }}>
+            {isSpeak ? (
+              <Image
+                source={require("./images/speaker_selected.png")}
+                style={styles.icon}
+              />
+            ) : (
+              <Image
+                source={require("./images/speaker.png")}
+                style={styles.icon}
+              />
+            )}
+          </TouchableOpacity>
+        </View>
+      ),
+    [isSpeak, isAnswerSuccess]
+  );
+
+  const buttonMute = useMemo(
+    () =>
+      isAnswerSuccess && (
+        <View style={{ flex: 1, alignItems: "center" }}>
+          <TouchableOpacity onPress={onToggleMute} style={{ padding: 10 }}>
+            {isMuted ? (
+              <Image
+                source={require("./images/mute_selected.png")}
+                style={styles.icon}
+              />
+            ) : (
+              <Image
+                source={require("./images/mute.png")}
+                style={styles.icon}
+              />
+            )}
+          </TouchableOpacity>
+        </View>
+      ),
+    [isMuted, isAnswerSuccess]
+  );
+
+  const viewActionBottom = useMemo(
     () => (
-      <View style={{ flex: 1, alignItems: "center" }}>
-        <TouchableOpacity onPress={onReject} style={{ padding: 10, flex: 1 }}>
-          <Image
-            source={require("./images/end_call.png")}
-            style={styles.icon}
-          />
-        </TouchableOpacity>
-      </View>
-    ),
-    []
-  );
-
-  const buttonAcceptCall = useMemo(() => {
-    return isOfferReceiverd && !isAnswerSuccess ? (
-      <View style={{ flex: 1, alignItems: "center" }}>
-        <TouchableOpacity
-          onPress={onAnswer(false)}
-          style={{ padding: 10, flex: 1 }}
-        >
-          <Image
-            source={require("./images/accept_call.png")}
-            style={styles.icon}
-          />
-        </TouchableOpacity>
-      </View>
-    ) : null;
-  }, [isOfferReceiverd, isAnswerSuccess]);
-
-  const buttonSpeaker = isAnswerSuccess && (
-    <View style={{ flex: 1, alignItems: "center" }}>
-      <TouchableOpacity onPress={onToggleSpeaker} style={{ padding: 10 }}>
-        {isSpeak ? (
-          <Image
-            source={require("./images/speaker_selected.png")}
-            style={styles.icon}
-          />
-        ) : (
-          <Image source={require("./images/speaker.png")} style={styles.icon} />
-        )}
-      </TouchableOpacity>
-    </View>
-  );
-
-  const buttonMute = isAnswerSuccess && (
-    <View style={{ flex: 1, alignItems: "center" }}>
-      <TouchableOpacity onPress={onToggleMute} style={{ padding: 10 }}>
-        {isMuted ? (
-          <Image
-            source={require("./images/mute_selected.png")}
-            style={styles.icon}
-          />
-        ) : (
-          <Image source={require("./images/mute.png")} style={styles.icon} />
-        )}
-      </TouchableOpacity>
-    </View>
-  );
-
-  const viewActionBottom = useMemo(() => {
-    return (
       <View
         style={{
           position: "absolute",
@@ -772,8 +722,9 @@ const CallScreen = (props, ref) => {
         {buttonEndCall}
         {buttonSpeaker}
       </View>
-    );
-  }, [isOfferReceiverd, isAnswerSuccess, isSpeak, isMuted]);
+    ),
+    [isAnswerSuccess, isMuted, isSpeak, isOfferReceiverd]
+  );
 
   const viewCalling = useMemo(
     () =>
@@ -942,11 +893,12 @@ const CallScreen = (props, ref) => {
         </View>
       ),
     [
+      remoteStreamURL,
       localStream,
       isOfferReceiverd,
       isAnswerSuccess,
-      isSpeak,
       isMuted,
+      isSpeak,
       props.userId,
     ]
   );
