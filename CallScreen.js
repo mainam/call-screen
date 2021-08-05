@@ -70,6 +70,7 @@ const CallScreen = (props, ref) => {
   const refPendingCandidates = useRef([]);
   const refOfferReceiverd = useRef(null);
   const refMakeCall = useRef(false);
+  const refOfferData = useRef(null);
   const [localStream, setLocalStream] = useState(false);
   const [remoteStreamURL, setRemoteStreamURL] = useState(false);
   const [isMuted, setMute] = useState(false);
@@ -135,26 +136,22 @@ const CallScreen = (props, ref) => {
     } else return "";
   };
   const incomingSound = ()=>{
-    // InCallManager.startRingtone("_BUNDLE_");
-    // Vibration.vibrate(PATTERN, true);
+    InCallManager.startRingtone("_BUNDLE_");
+    Vibration.vibrate(PATTERN, true);
   }
   const outcomingSound = ()=>{
     soundUtils.play("call_phone.mp3"); //bật âm thanh đang chờ bắt mày
   }
   const startSound = () => {
-    // InCallManager.startRingtone("_BUNDLE_");
-    // Vibration.vibrate(PATTERN, true);
+    InCallManager.startRingtone("_BUNDLE_");
+    Vibration.vibrate(PATTERN, true);
   };
   const stopSound = () => {
     soundUtils.stop();
-    // InCallManager.stopRingtone();
-    // InCallManager.stop();
-    // Vibration.cancel();
+    InCallManager.stopRingtone();
+    InCallManager.stop();
+    Vibration.cancel();
   };
-//   stopRingback() {
-//     //utils.timestampedLog('Stop ringback');
-//     InCallManager.stopRingback();
-// }
 
   const callPickUp = ()=>
   {
@@ -242,7 +239,7 @@ const CallScreen = (props, ref) => {
 
   const startCall = async ({ from, fromName, to, toName } = {}) => {
     try {
-      fetch(CallManager.host+"/api/call/create-call", {
+      fetch(CallManager.host+"/api/call/create-call?force=true", {
         method: 'POST', // *GET, POST, PUT, DELETE, etc.
         headers: {
           'Content-Type': 'application/json'
@@ -403,15 +400,18 @@ const CallScreen = (props, ref) => {
   // };
   const onCallKeepAnswer = ({ callUUID }) => {
     if (refAppState.current.match(/inactive|background/)) {
-      Alert.alert("Thông báo", "Nhấn đồng ý để trở lại cuộc gọi", [
-        { text: "Đồng ý", onPress: () => console.log("OK Pressed") },
-      ]);
+      setVisible(true);
+      // Alert.alert("Thông báo", "Nhấn đồng ý để trở lại cuộc gọi", [
+      //   { text: "Đồng ý", onPress: () => console.log("OK Pressed") },
+      // ]);
     } else {
       if (Platform.OS == "ios") RNCallKeep.reportEndCallWithUUID(callUUID, 2);
     }
     onAnswer(true, callUUID)();
   };
   const onCallKeepEndCall = ({ callUUID }) => {
+    if(!refCallId.current)
+    refCallId.callId = callUUID;
     if (!isAnswerSuccess) onReject();
   };
   const addEventCallKeep = () => {
@@ -428,40 +428,45 @@ const CallScreen = (props, ref) => {
     }
   };
   const onOfferReceived = async (data = {}) => {
-    incomingSound();
-    // if (refCallId.current) {
-    //   //Nếu đang trong cuộc gọi thì kêt thúc cuộc gọi
-    //   console.log("reject-call", data.callId);
-    //   if (Platform.OS == "ios")
-    //     RNCallKeep.reportEndCallWithUUID(data.callId, 2);
+    if(refCallId.current) //nếu đang trong cuộc gọi thì bỏ qua
+    {
+      if (Platform.OS == "ios")
+        RNCallKeep.reportEndCallWithUUID(data.callId, 2);
 
-    //   if (data.callId && VideoCallModule?.reject) {
-    //     VideoCallModule.reject(data.callId);
-    //   }
-    //   refSocket.current.emit(constants.socket_type.LEAVE, {
-    //     to: data.from,
-    //     callId: data.callId, // state.callId,
-    //     type: constants.socket_type.REJECT,
-    //   });
-    //   return;
-    // }
-    // if (
-    //   data.from == props.userId ||
-    //   refIgnoreCallIds.current.includes(data.callId)
-    // ) {
-    //   //nếu offer nhận được được thực hiện từ chính bạn thì bỏ qua
-    //   return;
-    // }
-    refOffer.current = data.offer;
-    refCallId.current = data.callId;
-    refCallingData.current = data.data || {};
-    refOfferReceiverd.current = true;
-    setOfferReceiverd(true);
-    refCreateOfferOrAnswer.current=false;
-    await setupWebRTC();
-    refPeer.current.addIceCandidate(new RTCIceCandidate(data.ice))
-    setVisible(true);
-    // startSound();
+      if (data.callId && VideoCallModule?.reject) {
+        VideoCallModule.reject(data.callId);
+      }
+
+      refSocket.current.emit(constants.socket_type.LEAVE, {
+        callId: data.callId, // state.callId,
+        type: constants.socket_type.BUSY,
+      });
+      return;
+    }
+
+    if (
+      data.from == props.userId ||
+      refIgnoreCallIds.current.includes(data.callId)
+    ) {
+      //nếu offer nhận được được thực hiện từ chính bạn thì bỏ qua
+      return;
+    }
+
+
+      refCallId.current = data.callId;
+      refOfferData.current = data;
+      refOfferReceiverd.current = true;
+      setOfferReceiverd(true); //đánh dấu là cuộc gọi đến 
+      if(Platform.OS=="ios") // nếu là thiết bị ios thì hiển thị callkeep
+      {
+        RNCallKeep.displayIncomingCall(data.callId, "", data.data.fromName);
+        return;
+      }else //ngược lại với thiết bị android thì hiển thị chuông báo cuộc gọi đến
+      {
+      // if(Platform.OS=="android")
+        incomingSound();
+      }
+      setVisible(true);
   };
 
   const onTimeOutPair = (data = {}) => {
@@ -482,6 +487,7 @@ const CallScreen = (props, ref) => {
   };
 
   const onAnswerReceived = async (data) => {
+    soundUtils.stop();
     await refPeer.current.setRemoteDescription(
       new RTCSessionDescription(data.answer)
     );    
@@ -513,13 +519,19 @@ const CallScreen = (props, ref) => {
 
   const onAnswer = (fromCallKeep, callUUid) => async () => {
     try {
+      const data = refOfferData.current;
+      refOffer.current = refOfferData.current?.offer;
+      refCallingData.current = refOfferData.current?.data || {};
+      refCreateOfferOrAnswer.current=false;
+      await setupWebRTC();
+      refPeer.current.addIceCandidate(new RTCIceCandidate(refOfferData.current?.ice))
+      refOffer.current = data.offer;
       if (refCallId.current && VideoCallModule?.reject) {
         VideoCallModule.reject(refCallId.current);
       }
       if (!refPeer.current) return;
       if (callUUid && refCallId.current != callUUid) return;
-      if (refCallId.current && !fromCallKeep) {
-        if (Platform.OS == "ios")
+      if (Platform.OS == "ios") {
           RNCallKeep.reportEndCallWithUUID(refCallId.current, 2);
       }
       await refPeer.current.setRemoteDescription(
@@ -539,6 +551,8 @@ const CallScreen = (props, ref) => {
       setAnswerSuccess(true);
       callPickUp();
       InCallManager.setKeepScreenOn(true);
+      if(!isVisible)
+      setVisible(true);
     } catch (error) {
       console.log(error);
     }
@@ -590,6 +604,7 @@ const CallScreen = (props, ref) => {
   };
 
   const onReject = () => {
+    stopSound();
     props.onLeave && props.onLeave({ callId: refCallId.current });
     let type =
       isAnswerSuccess || refMakeCall.current
