@@ -52,6 +52,7 @@ const isFront = true; // Use Front camera?
 
 const CallScreen = (props, ref) => {
   const refCreateOfferOrAnswer = useRef(null);
+  const refNextStream = useRef(null);
   const refCallId = useRef(null);
   const refOffer = useRef(null);
   const refAnswer = useRef(null);
@@ -76,6 +77,7 @@ const CallScreen = (props, ref) => {
   const [isOfferReceiverd, setOfferReceiverd] = useState(false);
   const [isAnswerSuccess, setAnswerSuccess] = useState(false);
   const [isVisible, setVisible] = useState(false);
+  const [appState, setAppState] = useState(false);
 
   useEffect(() => {
     addEventCallKeep();
@@ -118,10 +120,9 @@ const CallScreen = (props, ref) => {
       refAppState.current.match(/inactive|background/) &&
       nextAppState === "active"
     ) {
-      console.log("App has come to the foreground!");
     }
-
     refAppState.current = nextAppState;
+    setAppState(nextAppState);
   };
   const getCallingName = () => {
     if (refCallingData.current) {
@@ -269,9 +270,27 @@ const CallScreen = (props, ref) => {
     } catch (e) {}
   };
   const onSwitchCamera = () => {
-    if (localStream?.getVideoTracks)
+    if (localStream?.getVideoTracks) {
       localStream?.getVideoTracks().forEach((track) => track._switchCamera());
+    }
   };
+  useEffect(() => {
+    setTimeout(async () => {
+      if (
+        localStream?.getVideoTracks &&
+        localStream?.getVideoTracks()?.length
+      ) {
+        if (Platform.OS == "ios") {
+          const track = localStream?.getVideoTracks()[0];
+          track._switchCamera();
+          setTimeout(() => {
+            track._switchCamera();
+          }, 1000);
+        }
+      }
+    }, 5000);
+  }, [appState, localStream]);
+  // },[appState])
   const onTimeOut = () => {
     refTimeout.current = setTimeout(() => {
       onReject();
@@ -418,12 +437,12 @@ const CallScreen = (props, ref) => {
   };
 
   const onAnswerReceived = async (data) => {
-    soundUtils.stop();
+    onTimeOut();
+    callPickUp();
     await refPeer.current.setRemoteDescription(
       new RTCSessionDescription(data.answer)
     );
     setAnswerSuccess(true);
-    callPickUp();
   };
   const onLeave = (data = {}) => {
     refIgnoreCallIds.current.push(data.callId);
@@ -450,6 +469,7 @@ const CallScreen = (props, ref) => {
   const onAnswer = (callUUid) => async () => {
     try {
       setAnswerSuccess(true);
+      onTimeOut();
       const answer = async () => {
         const data = refOfferData.current;
         refOffer.current = refOfferData.current?.offer;
@@ -479,6 +499,20 @@ const CallScreen = (props, ref) => {
         });
         if (!isVisible) setVisible(true);
         callPickUp();
+        if (refAppState.current == "active") {
+          const notification =
+            new CallManager.firebase.notifications.Notification()
+              .setNotificationId("1")
+              .setTitle("Cuộc gọi video call")
+              .setBody("Nhấn vào đây để quay về cuộc gọi")
+              .setData({});
+
+          notification.ios.setBadge(2);
+        }
+
+        new CallManager.firebase.notifications().displayNotification(
+          notification
+        );
       };
 
       if (Platform.OS == "ios") {
