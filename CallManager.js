@@ -36,6 +36,7 @@ class CallManager {
       packageName,
       firebase,
       callingName,
+      userAvatar
     } = payload || {}
   ) {
     if (this.hasInited) {
@@ -52,6 +53,7 @@ class CallManager {
     this.packageName = packageName;
     this.firebase = firebase;
     this.callingName = callingName;
+    this.userAvatar = userAvatar;
   }
   startCall(booking, isOffer) {
     const ref = this.getDefault();
