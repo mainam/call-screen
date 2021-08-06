@@ -20,7 +20,6 @@ import {
   Platform,
   StyleSheet,
   TouchableOpacity,
-  Dimensions,
   StatusBar,
   Image,
   Modal,
@@ -39,7 +38,6 @@ import CallManager from "./CallManager";
 import { NativeModules } from "react-native";
 
 const { VideoCallModule } = NativeModules;
-const { height } = Dimensions.get("screen");
 
 const ONE_SECOND_IN_MS = 1000;
 
@@ -52,7 +50,7 @@ const isFront = true; // Use Front camera?
 
 const CallScreen = (props, ref) => {
   const refCreateOfferOrAnswer = useRef(null);
-  const refNextStream = useRef(null);
+  const refTimeOutToast = useRef(null);
   const refCallId = useRef(null);
   const refOffer = useRef(null);
   const refAnswer = useRef(null);
@@ -72,13 +70,17 @@ const CallScreen = (props, ref) => {
   const refOfferData = useRef(null);
   const [localStream, setLocalStream] = useState(false);
   const [remoteStreamURL, setRemoteStreamURL] = useState(false);
-  const [isMuted, setMute] = useState(false);
-  const [isSpeak, setSpeak] = useState(true);
   const [isOfferReceiverd, setOfferReceiverd] = useState(false);
   const [isAnswerSuccess, setAnswerSuccess] = useState(false);
   const [isVisible, setVisible] = useState(false);
-  const [appState, setAppState] = useState(false);
-
+  const [appState, setAppState] = useState(AppState.currentState);
+  const [state, _setState] = useState({
+    isMuted: false,
+    isSpeak: true,
+  });
+  const setState = (data = {}) => {
+    _setState((state) => ({ ...state, ...data }));
+  };
   useEffect(() => {
     addEventCallKeep();
     registerSocket();
@@ -115,6 +117,29 @@ const CallScreen = (props, ref) => {
       }
     }
   }, [props.loginToken]);
+
+  const showNotice = ({ message }) => {
+    if (refTimeOutToast.current) {
+      clearTimeout(refTimeOutToast.current);
+      refTimeOutToast.current = null;
+    }
+    setState({
+      toastMessage: message,
+      showToast: true,
+    });
+    refTimeOutToast.current = setTimeout(() => {
+      setState({
+        showToast: false,
+      });
+    }, 5000);
+  };
+  useEffect(() => {
+    showNotice({
+      message:
+        "Nếu gặp phải tình trạng mất tiếng, hay mất hình. Vui lòng thực hiện lại cuộc gọi khác",
+      type: 0,
+    });
+  }, [isAnswerSuccess, appState]);
   const handleAppStateChange = (nextAppState) => {
     if (
       refAppState.current.match(/inactive|background/) &&
@@ -261,11 +286,13 @@ const CallScreen = (props, ref) => {
               outcomingSound();
               break;
             default:
-              props.onLeave && props.onLeave({ reason: s.message, code: 0 });
+              props.showMessage &&
+                props.showMessage({ message: s.message, type: 0 });
           }
         })
         .catch((e) => {
-          props.onLeave && props.onLeave({ reason: e?.message, code: 0 });
+          props.showMessage &&
+            props.showMessage({ message: e?.message, type: 2 });
         });
     } catch (e) {}
   };
@@ -282,14 +309,36 @@ const CallScreen = (props, ref) => {
       ) {
         if (Platform.OS == "ios") {
           const track = localStream?.getVideoTracks()[0];
-          track._switchCamera();
-          setTimeout(() => {
-            track._switchCamera();
-          }, 1000);
+          try {
+            track.enabled = false;
+            track.enabled = true;
+          } catch (error) {}
         }
       }
-    }, 5000);
-  }, [appState, localStream]);
+    }, 2000);
+  }, [appState, localStream, isAnswerSuccess, isVisible]);
+  useEffect(() => {
+    //     const date = new Date();
+    // date.setMinutes(date.getMinutes() + 1);
+    // const notification =
+    //             new firebase.notifications.Notification()
+    //               .setNotificationId(stringUtils.guid())
+    //               .setTitle("Cuộc gọi video call")
+    //               .setBody("Nhấn vào đây để quay về cuộc gọi");
+    //     new firebase.notifications().displayNotification(notification)
+    // if((appState ||"").match(/inactive|background/) && isVisible)
+    // {
+    // console.log("nammn",appState);
+    // const notification =
+    //       new CallManager.firebase.notifications.Notification()
+    //         .setNotificationId(stringUtils.guid())
+    //         .setTitle("Cuộc gọi video call")
+    //         .setBody("Nhấn vào đây để quay về cuộc gọi");
+    //     new CallManager.firebase.notifications().displayNotification(
+    //       notification
+    //     );
+    // }
+  }, [appState]);
   // },[appState])
   const onTimeOut = () => {
     refTimeout.current = setTimeout(() => {
@@ -299,14 +348,29 @@ const CallScreen = (props, ref) => {
 
   // Mutes the local's outgoing audio
   const onToggleMute = () => {
-    localStream?.getAudioTracks().forEach((track) => {
-      track.enabled = !track.enabled;
-      setMute(!track.enabled);
-    });
+    if (localStream?.getAudioTracks) {
+      localStream?.getAudioTracks().forEach((track) => {
+        track.enabled = !track.enabled;
+        setState({
+          isMuted: !track.enabled,
+        });
+      });
+    } else {
+      if (localStream?.getVideoTracks) {
+        localStream?.getVideoTracks().forEach((track) => {
+          track.enabled = !track.enabled;
+          setState({
+            isMuted: !track.enabled,
+          });
+        });
+      }
+    }
   };
   const onToggleSpeaker = () => {
-    const newValue = !isSpeak;
-    setSpeak(newValue);
+    const newValue = !state.isSpeak;
+    setState({
+      isSpeak: newValue,
+    });
     InCallManager.setForceSpeakerphoneOn(newValue);
   };
 
@@ -337,12 +401,13 @@ const CallScreen = (props, ref) => {
                 case 0:
                   break;
                 default:
-                  props.onLeave &&
-                    props.onLeave({ reason: s.message, code: 0 });
+                  props.showMessage &&
+                    props.showMessage({ message: s.message, type: 0 });
               }
             })
             .catch((e) => {
-              props.onLeave && props.onLeave({ reason: e?.message, code: 0 });
+              props.showMessage &&
+                props.showMessage({ message: e.message, type: 2 });
             });
         }
       } else {
@@ -365,7 +430,9 @@ const CallScreen = (props, ref) => {
     } else {
       if (Platform.OS == "ios") RNCallKeep.reportEndCallWithUUID(callUUID, 2);
     }
-    onAnswer(callUUID)();
+    setTimeout(() => {
+      onAnswer(callUUID)();
+    }, 1000);
   };
   const onCallKeepEndCall = ({ callUUID }) => {
     if (!refCallId.current) refCallId.callId = callUUID;
@@ -458,12 +525,18 @@ const CallScreen = (props, ref) => {
         reason = "Kết thúc cuộc gọi";
       }
       handleReject();
-      props.onLeave &&
-        props.onLeave({ callId: refCallId.current, reason, code: data.code });
+      props.showMessage && props.showMessage({ message: reason, type: 0 });
     }
     if (data.callId && VideoCallModule?.reject) {
       VideoCallModule.reject(data.callId);
     }
+  };
+  const showPushNotification = (message, title) => {
+    const notification = new CallManager.firebase.notifications.Notification()
+      .setNotificationId(stringUtils.guid())
+      .setTitle(title)
+      .setBody(message);
+    new CallManager.firebase.notifications().displayNotification(notification);
   };
 
   const onAnswer = (callUUid) => async () => {
@@ -497,24 +570,9 @@ const CallScreen = (props, ref) => {
           userId: props.userId,
           data: refCallingData.current,
         });
-        if (!isVisible) setVisible(true);
         callPickUp();
-        if (refAppState.current == "active") {
-          const notification =
-            new CallManager.firebase.notifications.Notification()
-              .setNotificationId("1")
-              .setTitle("Cuộc gọi video call")
-              .setBody("Nhấn vào đây để quay về cuộc gọi")
-              .setData({});
-
-          notification.ios.setBadge(2);
-        }
-
-        new CallManager.firebase.notifications().displayNotification(
-          notification
-        );
       };
-
+      setVisible(true);
       if (Platform.OS == "ios") {
         RNCallKeep.reportEndCallWithUUID(refCallId.current, 2);
         setTimeout(answer, 1000);
@@ -550,10 +608,21 @@ const CallScreen = (props, ref) => {
     refAnswer.current = null;
     refPeer.current = null;
     refMakeCall.current = false;
+    if (localStream) {
+      try {
+        if (localStream.getTracks)
+          localStream.getTracks().forEach((track) => track.stop());
+        if (localStream.getVideoTracks)
+          localStream.getVideoTracks().forEach((track) => track.stop());
+        localStream.release();
+      } catch (error) {}
+    }
     setLocalStream(null);
     setRemoteStreamURL(null);
-    setMute(false);
-    setSpeak(true);
+    setState({
+      isMute: false,
+      isSpeak: true,
+    });
     setOfferReceiverd(false);
     setAnswerSuccess(false);
     setVisible(false);
@@ -572,7 +641,6 @@ const CallScreen = (props, ref) => {
   };
 
   const onReject = () => {
-    props.onLeave && props.onLeave({ callId: refCallId.current });
     let type =
       isAnswerSuccess || refMakeCall.current
         ? constants.socket_type.LEAVE
@@ -647,6 +715,7 @@ const CallScreen = (props, ref) => {
         platform: Platform.OS,
         deviceId: CallManager.deviceId,
         packageName: CallManager.packageName,
+        fullName: props.fullName,
       });
   };
   const registerSocket = () => {
@@ -701,7 +770,7 @@ const CallScreen = (props, ref) => {
       isAnswerSuccess && (
         <View style={{ flex: 1, alignItems: "center" }}>
           <TouchableOpacity onPress={onToggleSpeaker} style={{ padding: 10 }}>
-            {isSpeak ? (
+            {state.isSpeak ? (
               <Image
                 source={require("./images/speaker_selected.png")}
                 style={styles.icon}
@@ -715,7 +784,7 @@ const CallScreen = (props, ref) => {
           </TouchableOpacity>
         </View>
       ),
-    [isSpeak, isAnswerSuccess]
+    [state.isSpeak, isAnswerSuccess]
   );
 
   const buttonMute = useMemo(
@@ -723,7 +792,7 @@ const CallScreen = (props, ref) => {
       isAnswerSuccess && (
         <View style={{ flex: 1, alignItems: "center" }}>
           <TouchableOpacity onPress={onToggleMute} style={{ padding: 10 }}>
-            {isMuted ? (
+            {state.isMuted ? (
               <Image
                 source={require("./images/mute_selected.png")}
                 style={styles.icon}
@@ -737,7 +806,7 @@ const CallScreen = (props, ref) => {
           </TouchableOpacity>
         </View>
       ),
-    [isMuted, isAnswerSuccess]
+    [state.isMuted, isAnswerSuccess]
   );
 
   const viewActionBottom = useMemo(
@@ -757,7 +826,7 @@ const CallScreen = (props, ref) => {
         {buttonSpeaker}
       </View>
     ),
-    [isAnswerSuccess, isMuted, isSpeak, isOfferReceiverd]
+    [isAnswerSuccess, state.isMuted, state.isSpeak, isOfferReceiverd]
   );
 
   const viewCalling = useMemo(
@@ -906,6 +975,30 @@ const CallScreen = (props, ref) => {
       )
     );
   }, [remoteStreamURL, isAnswerSuccess]);
+  const toastMessage = useMemo(() => {
+    return (
+      state.showToast && (
+        <View
+          style={{
+            position: "absolute",
+            top: 0,
+            left: 0,
+            right: 0,
+            zIndex: 5,
+            paddingTop: 30,
+            backgroundColor: "#00000090",
+            paddingBottom: 10,
+            paddingLeft: 10,
+            paddingRight: 10,
+          }}
+        >
+          <Text style={{ color: "#FFF", fontSize: 16 }}>
+            {state.toastMessage}
+          </Text>
+        </View>
+      )
+    );
+  }, [state.showToast, state.toastMessage]);
 
   const connectedCall = useMemo(
     () =>
@@ -915,6 +1008,7 @@ const CallScreen = (props, ref) => {
         >
           {partnerStream}
           {myStream}
+          {toastMessage}
           <View style={{ zIndex: 3, top: 300, alignItems: "center" }}>
             <Timer
               data={{
@@ -927,12 +1021,14 @@ const CallScreen = (props, ref) => {
         </View>
       ),
     [
+      state.toastMessage,
+      state.showToast,
       remoteStreamURL,
       localStream,
       isOfferReceiverd,
       isAnswerSuccess,
-      isMuted,
-      isSpeak,
+      state.isMuted,
+      state.isSpeak,
       props.userId,
     ]
   );
