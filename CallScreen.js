@@ -617,7 +617,6 @@ const CallScreen = (props, ref) => {
     if (refCallId.current) {
       if (Platform.OS == "ios")
         RNCallKeep.reportEndCallWithUUID(refCallId.current, 2);
-      debugger;
     }
     refCallId.current = null;
     refCallingData.current = null;
