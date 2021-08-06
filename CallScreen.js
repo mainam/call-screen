@@ -72,11 +72,11 @@ const CallScreen = (props, ref) => {
   const [remoteStreamURL, setRemoteStreamURL] = useState(false);
   const [isOfferReceiverd, setOfferReceiverd] = useState(false);
   const [isAnswerSuccess, setAnswerSuccess] = useState(false);
-  const [isVisible, setVisible] = useState(false);
   const [appState, setAppState] = useState(AppState.currentState);
   const [state, _setState] = useState({
     isMuted: false,
     isSpeak: true,
+    isVisible: false,
   });
   const setState = (data = {}) => {
     _setState((state) => ({ ...state, ...data }));
@@ -140,6 +140,7 @@ const CallScreen = (props, ref) => {
       type: 0,
     });
   }, [isAnswerSuccess, appState]);
+
   const handleAppStateChange = (nextAppState) => {
     if (
       refAppState.current.match(/inactive|background/) &&
@@ -218,16 +219,18 @@ const CallScreen = (props, ref) => {
       try {
         const videoSourceId = await getVideoDevice();
         const constraints = {
+          // audio: true,
+          // video: {
+          //   mandatory: {
+          //     minWidth: 500, // Provide your own width, height and frame rate here
+          //     minHeight: 300,
+          //     minFrameRate: 30,
+          //   },
+          //   facingMode: isFront ? "user" : "environment",
+          //   optional: videoSourceId ? [{ sourceId: videoSourceId }] : [],
+          // },
+          video: true,
           audio: true,
-          video: {
-            mandatory: {
-              minWidth: 500, // Provide your own width, height and frame rate here
-              minHeight: 300,
-              minFrameRate: 30,
-            },
-            facingMode: isFront ? "user" : "environment",
-            optional: videoSourceId ? [{ sourceId: videoSourceId }] : [],
-          },
         };
         const stream = await mediaDevices.getUserMedia(constraints);
         resolve(stream);
@@ -243,6 +246,9 @@ const CallScreen = (props, ref) => {
         const stream = await initLocalVideo();
         setLocalStream(stream);
         const peer = createPeer();
+        // for (const track of stream.getTracks()) {
+        //   peer.addTrack(track);
+        // }
         peer.addStream(stream);
         if (!refOfferReceiverd.current) {
           //chi khi thuc hien cuoc goi thi moi tao offer
@@ -281,7 +287,7 @@ const CallScreen = (props, ref) => {
               refCallId.current = s.data.call?.callId;
               refCreateOfferOrAnswer.current = false;
               await setupWebRTC();
-              setVisible(true);
+              setState({ isVisible: true });
               InCallManager.setKeepScreenOn(true);
               outcomingSound();
               break;
@@ -303,20 +309,34 @@ const CallScreen = (props, ref) => {
   };
   useEffect(() => {
     setTimeout(async () => {
-      if (
-        localStream?.getVideoTracks &&
-        localStream?.getVideoTracks()?.length
-      ) {
-        if (Platform.OS == "ios") {
-          const track = localStream?.getVideoTracks()[0];
-          try {
-            track.enabled = false;
-            track.enabled = true;
-          } catch (error) {}
+      if (Platform.OS == "ios") {
+        if (
+          localStream?.getVideoTracks &&
+          localStream?.getVideoTracks()?.length
+        ) {
+          localStream?.getVideoTracks().forEach((tract) => {
+            try {
+              track.enabled = false;
+              track.enabled = true;
+              track._switchCamera();
+              track._switchCamera();
+            } catch (error) {}
+          });
+        }
+        if (
+          localStream?.getAudioTracks &&
+          localStream?.getAudioTracks()?.length
+        ) {
+          localStream?.getAudioTracks().forEach((tract) => {
+            try {
+              track.enabled = false;
+              track.enabled = true;
+            } catch (error) {}
+          });
         }
       }
     }, 2000);
-  }, [appState, localStream, isAnswerSuccess, isVisible]);
+  }, [appState, localStream, isAnswerSuccess, state.isVisible]);
   useEffect(() => {
     //     const date = new Date();
     // date.setMinutes(date.getMinutes() + 1);
@@ -426,7 +446,7 @@ const CallScreen = (props, ref) => {
 
   const onCallKeepAnswer = ({ callUUID }) => {
     if (refAppState.current.match(/inactive|background/)) {
-      setVisible(true);
+      setState({ isVisible: true });
     } else {
       if (Platform.OS == "ios") RNCallKeep.reportEndCallWithUUID(callUUID, 2);
     }
@@ -487,7 +507,7 @@ const CallScreen = (props, ref) => {
     } //ngược lại với thiết bị android thì hiển thị chuông báo cuộc gọi đến
 
     if (Platform.OS == "android") incomingSound();
-    setVisible(true);
+    setState({ isVisible: true });
   };
 
   const onTimeOutPair = (data = {}) => {};
@@ -542,6 +562,7 @@ const CallScreen = (props, ref) => {
   const onAnswer = (callUUid) => async () => {
     try {
       setAnswerSuccess(true);
+      setState({ isVisible: true });
       onTimeOut();
       const answer = async () => {
         const data = refOfferData.current;
@@ -572,7 +593,6 @@ const CallScreen = (props, ref) => {
         });
         callPickUp();
       };
-      setVisible(true);
       if (Platform.OS == "ios") {
         RNCallKeep.reportEndCallWithUUID(refCallId.current, 2);
         setTimeout(answer, 1000);
@@ -622,10 +642,10 @@ const CallScreen = (props, ref) => {
     setState({
       isMute: false,
       isSpeak: true,
+      isVisible: false,
     });
     setOfferReceiverd(false);
     setAnswerSuccess(false);
-    setVisible(false);
   };
 
   const sendMessage = (type, msgObj) => {
@@ -1038,7 +1058,7 @@ const CallScreen = (props, ref) => {
       animated={true}
       animationType="slide"
       transparent={false}
-      visible={isVisible}
+      visible={state.isVisible}
     >
       <StatusBar translucent={true} backgroundColor={"transparent"} />
       {viewCalling}
@@ -1050,54 +1070,13 @@ const CallScreen = (props, ref) => {
 CallScreen.propTypes = {};
 
 const styles = StyleSheet.create({
-  textWarning: {
-    color: "#FFF",
-    textAlign: "center",
-    flex: 1,
-    paddingHorizontal: 10,
-    paddingTop: 20,
-  },
-  groupLocalSteam: {
-    height: "30%",
-    width: "40%",
-    borderRadius: 5,
-    alignSelf: "flex-end",
-    marginRight: 10,
-    marginTop: 10,
-    marginBottom: 5,
-    zIndex: 10,
-  },
   icon: {
     height: 60,
     width: 60,
   },
-  buttonSwitch: {
-    padding: 10,
-    position: "absolute",
-    bottom: 10,
-    marginBottom: 10,
-    alignSelf: "center",
-  },
   iconSwitch: {
     height: 40,
     width: 40,
-  },
-  container: {
-    backgroundColor: "#313131",
-    // justifyContent: 'space-between',
-    // alignItems: 'center',
-    flex: 1,
-    paddingTop: 10,
-  },
-  text: {
-    fontSize: 30,
-  },
-  rtcview: {
-    // backgroundColor: 'black',
-  },
-  rtc: {
-    width: "100%",
-    height: "100%",
   },
 });
 
