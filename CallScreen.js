@@ -50,6 +50,8 @@ const isFront = true; // Use Front camera?
 
 const CallScreen = (props, ref) => {
   const refCreateOfferOrAnswer = useRef(null);
+  const refPendingCandidates = useRef([]);
+  const refTimeoutCreateCalling = useRef(null);
   const refTimeOutToast = useRef(null);
   const refCallId = useRef(null);
   const refOffer = useRef(null);
@@ -161,7 +163,7 @@ const CallScreen = (props, ref) => {
   };
   const incomingSound = () => {
     InCallManager.startRingtone("_BUNDLE_");
-    Vibration.vibrate(PATTERN, true);
+    // Vibration.vibrate(PATTERN, true);
   };
   const outcomingSound = () => {
     soundUtils.play("call_phone.mp3"); //bật âm thanh đang chờ bắt mày
@@ -208,9 +210,11 @@ const CallScreen = (props, ref) => {
     const peer = new RTCPeerConnection({
       iceServers: CallManager.DEFAULT_ICE.iceServers,
     });
+    debugger;
+    refPeer.current = peer;
     peer.onicecandidate = onICECandiate;
     peer.onaddstream = onAddStream;
-    refPeer.current = peer;
+    peer.onicegatheringstatechange = onICEGratherStateChange;
     return peer;
   };
 
@@ -394,45 +398,73 @@ const CallScreen = (props, ref) => {
     InCallManager.setForceSpeakerphoneOn(newValue);
   };
 
+  const onICEGratherStateChange = e => {
+    switch (refPeer.current?.iceGatheringState) {
+      case "complete":
+        debugger;
+        if (refPendingCandidates.current.length > 0 && !refCreateOfferOrAnswer.current) {
+          if(refTimeoutCreateCalling.current)
+          {
+            clearTimeout(refTimeoutCreateCalling.current)
+            refTimeoutCreateCalling.current=null;
+          }
+          onCreateCalling();
+        }
+        break;      
+    }
+  }
+
+  const onCreateCalling = ()=>{
+    refCreateOfferOrAnswer.current=true;
+    if(!refOffer.current)
+    return;
+    refOffer.current.sdp = BandwidthHandler.getSdp(refOffer.current.sdp);
+    fetch(CallManager.host + "/api/call/calling/" + refCallId.current, {
+      method: "PUT", // *GET, POST, PUT, DELETE, etc.
+      headers: {
+        "Content-Type": "application/json",
+      }, // body data type must match "Content-Type" header
+      
+      body: JSON.stringify({
+        userId: refUserId.current,
+        ices: refPendingCandidates.current,
+        offer: refOffer.current,
+      }),
+    })
+      .then((s) => s.json())
+      .then((s) => {
+        switch (s?.code) {
+          case 0:
+            break;
+          default:
+            refCreateOfferOrAnswer.current=false;
+            props.showMessage &&
+              props.showMessage({ message: s.message, type: 0 });
+        }
+      })
+      .catch((e) => {
+        refCreateOfferOrAnswer.current=false;
+        props.showMessage &&
+          props.showMessage({ message: e.message, type: 2 });
+      });
+  }
+
   const onICECandiate = (e) => {
     const { candidate } = e;
     if (candidate) {
+      debugger;
       if (!refOfferReceiverd.current) {
-        if (
-          !refCreateOfferOrAnswer.current &&
-          refCallId.current &&
-          candidate.sdpMid == "video"
-        ) {
-          refCreateOfferOrAnswer.current = true;
-          fetch(CallManager.host + "/api/call/calling/" + refCallId.current, {
-            method: "PUT", // *GET, POST, PUT, DELETE, etc.
-            headers: {
-              "Content-Type": "application/json",
-            }, // body data type must match "Content-Type" header
-            body: JSON.stringify({
-              userId: refUserId.current,
-              ice: candidate,
-              offer: refOffer.current,
-            }),
-          })
-            .then((s) => s.json())
-            .then((s) => {
-              switch (s?.code) {
-                case 0:
-                  break;
-                default:
-                  props.showMessage &&
-                    props.showMessage({ message: s.message, type: 0 });
-              }
-            })
-            .catch((e) => {
-              props.showMessage &&
-                props.showMessage({ message: e.message, type: 2 });
-            });
+        refPendingCandidates.current.push(candidate);
+        if(refTimeoutCreateCalling.current)
+        {
+          clearTimeout(refTimeoutCreateCalling.current)
         }
+        refTimeoutCreateCalling.current = setTimeout(() => {
+          onCreateCalling();
+        }, 3000);
       } else {
         sendMessage(constants.socket_type.CANDIDATE, {
-          userId: props.userId,
+          userId: props.userId, 
           ice: candidate,
           callId: refCallId.current,
         });
@@ -441,7 +473,10 @@ const CallScreen = (props, ref) => {
   };
 
   const onAddStream = (e) => {
+    console.log("nammn","begin setRemoteStreamURL",e.stream)
     setRemoteStreamURL(e.stream.toURL());
+    console.log("nammn","end setRemoteStreamURL",e.stream)
+
   };
 
   const onCallKeepAnswer = ({ callUUID }) => {
@@ -513,23 +548,32 @@ const CallScreen = (props, ref) => {
   const onTimeOutPair = (data = {}) => {};
   const onCandidate = async (data = {}) => {
     if (refPeer.current && data.callId == refCallId.current && data.ice) {
-      if (data.ice.sdp) {
-        await refPeer.current.setRemoteDescription(
-          new RTCSessionDescription(data.ice)
-        );
-      } else {
-        refPeer.current.addIceCandidate(new RTCIceCandidate(data.ice));
-      }
+      // if (data.ice.sdp) { //không bao giờ xảy ra case này vì sdp offer gửi kèm từ emit offer answer
+      //   await refPeer.current.setRemoteDescription(
+      //     new RTCSessionDescription(data.ice)
+      //   );
+      // } else {
+        setTimeout((ice) => {
+          console.log("nammn","offer: begin RTCIceCandidate",ice)
+          refPeer.current&&refPeer.current.addIceCandidate(new RTCIceCandidate(ice));          
+          console.log("nammn","offer: end RTCIceCandidate",ice)
+        }, 3000,data.ice);
+      // }
     }
   };
 
   const onAnswerReceived = async (data) => {
     onTimeOut();
     callPickUp();
-    await refPeer.current.setRemoteDescription(
-      new RTCSessionDescription(data.answer)
-    );
-    setAnswerSuccess(true);
+    if(refPeer.current)
+    {
+      console.log("nammn","offer: begin setRemoteDescription",data.answer)
+      await refPeer.current.setRemoteDescription(
+        new RTCSessionDescription(data.answer)
+      );
+      console.log("nammn","offer: end setRemoteDescription",data.answer)
+      setAnswerSuccess(true);
+    }
   };
   const onLeave = (data = {}) => {
     refIgnoreCallIds.current.push(data.callId);
@@ -551,38 +595,51 @@ const CallScreen = (props, ref) => {
       VideoCallModule.reject(data.callId);
     }
   };
-  const showPushNotification = (message, title) => {
-    const notification = new CallManager.firebase.notifications.Notification()
-      .setNotificationId(stringUtils.guid())
-      .setTitle(title)
-      .setBody(message);
-    new CallManager.firebase.notifications().displayNotification(notification);
-  };
+  // const showPushNotification = (message, title) => {
+  //   const notification = new CallManager.firebase.notifications.Notification()
+  //     .setNotificationId(stringUtils.guid())
+  //     .setTitle(title)
+  //     .setBody(message);
+  //   new CallManager.firebase.notifications().displayNotification(notification);
+  // };
 
   const onAnswer = (callUUid) => async () => {
     try {
+      if (callUUid && refCallId.current != callUUid) return;
       setAnswerSuccess(true);
       setState({ isVisible: true });
       onTimeOut();
+      
       const answer = async () => {
         const data = refOfferData.current;
         refOffer.current = refOfferData.current?.offer;
         refCallingData.current = refOfferData.current?.data || {};
         refCreateOfferOrAnswer.current = false;
         await setupWebRTC();
-        refPeer.current.addIceCandidate(
-          new RTCIceCandidate(refOfferData.current?.ice)
+        if (!refPeer.current) return;
+        console.log("nammn","answer: begin setRemoteDescription",refOffer.current)
+        await refPeer.current.setRemoteDescription(
+          new RTCSessionDescription(refOffer.current)
         );
+        console.log("nammn","answer: end setRemoteDescription",refOffer.current)
+
+        if(refOfferData.current?.ices)
+        {
+          refOfferData.current?.ices.forEach(ice=>{
+            console.log("nammn","answer: begin addIceCandidate",refOffer.current)
+            refPeer.current.addIceCandidate(
+              new RTCIceCandidate(ice)
+            );
+            console.log("nammn","answer: end addIceCandidate",refOffer.current)
+          })
+        }
         refOffer.current = data.offer;
         if (refCallId.current && VideoCallModule?.reject) {
           VideoCallModule.reject(refCallId.current);
         }
-        if (!refPeer.current) return;
-        if (callUUid && refCallId.current != callUUid) return;
-        await refPeer.current.setRemoteDescription(
-          new RTCSessionDescription(refOffer.current)
-        );
+        
         const answer = await refPeer.current.createAnswer();
+        answer.sdp = BandwidthHandler.getSdp(answer.sdp);
         refAnswer.current = answer;
         await refPeer.current.setLocalDescription(answer);
         sendMessage(constants.socket_type.ANSWER, {
@@ -620,7 +677,7 @@ const CallScreen = (props, ref) => {
     }
     refCallId.current = null;
     refCallingData.current = null;
-    // refPendingCandidates.current = [];
+    refPendingCandidates.current = [];
     refOfferReceiverd.current = false;
     refCreateOfferOrAnswer.current = false;
     refOffer.current = null;
