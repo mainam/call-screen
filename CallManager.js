@@ -24,6 +24,9 @@ class CallManager {
         urls: "stun:stun2.l.google.com:19302",
       },
       {
+        urls: "stun:stun3.l.google.com:19302",
+      },      
+      {
         urls: "stun:stun.services.mozilla.com",
       },
     ],
@@ -46,7 +49,7 @@ class CallManager {
     this.hasInited = true;
     this.DEFAULT_ICE.iceServers = [
       ...iceServer,
-      ...this.DEFAULT_ICE.iceServers,
+      ...this.DEFAULT_ICE.iceServers
     ];
     this.host = socketHost;
     this.deviceId = deviceId;
