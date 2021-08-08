@@ -73,7 +73,6 @@ const CallScreen = (props, ref) => {
   const refOfferData = useRef(null);
   const [localStream, setLocalStream] = useState(false);
   const [remoteStreamURL, setRemoteStreamURL] = useState(false);
-  const [isAnswerSuccess, setAnswerSuccess] = useState(false);
   const [state, _setState] = useState({
     isMuted: false,
     isSpeak: true,
@@ -147,7 +146,7 @@ const CallScreen = (props, ref) => {
         "Nếu gặp phải tình trạng mất tiếng, hay mất hình. Vui lòng thực hiện lại cuộc gọi khác",
       type: 0,
     });
-  }, [isAnswerSuccess, state.appState]);
+  }, [state.isAnswerSuccess, state.appState]);
 
   const handleAppStateChange = (nextAppState) => {
     if (
@@ -347,7 +346,7 @@ const CallScreen = (props, ref) => {
         }
       }
     }, 2000);
-  }, [state.appState, localStream, isAnswerSuccess, state.isVisible]);
+  }, [state.appState, localStream, state.isAnswerSuccess, state.isVisible]);
   // useEffect(() => {
   //   //     const date = new Date();
   //   // date.setMinutes(date.getMinutes() + 1);
@@ -495,7 +494,7 @@ const CallScreen = (props, ref) => {
   };
   const onCallKeepEndCall = ({ callUUID }) => {
     if (!refCallId.current) refCallId.callId = callUUID;
-    if (!isAnswerSuccess) onReject();
+    if (!state.isAnswerSuccess) onReject();
   };
   const addEventCallKeep = () => {
     if (Platform.OS == "ios") {
@@ -564,8 +563,7 @@ const CallScreen = (props, ref) => {
   const onAnswer = (callUUid) => async () => {
     try {
       if (callUUid && refCallId.current != callUUid) return;
-      setAnswerSuccess(true);
-      setState({ isVisible: true });
+      setState({ isVisible: true, isAnswerSuccess: true });
       onTimeOut();
 
       const answer = () => {
@@ -642,7 +640,9 @@ const CallScreen = (props, ref) => {
         new RTCSessionDescription(data.answer)
       );
       console.log("nammn", "offer: end setRemoteDescription", data.answer);
-      setAnswerSuccess(true);
+      setState({
+        isAnswerSuccess: true,
+      });
     }
   };
 
@@ -656,7 +656,7 @@ const CallScreen = (props, ref) => {
 
     if (data.callId == refCallId.current) {
       let reason = "";
-      if (data.status && data.code == 1 && !isAnswerSuccess) {
+      if (data.status && data.code == 1 && !state.isAnswerSuccess) {
         reason = "Máy bận";
       } else {
         reason = "Kết thúc cuộc gọi";
@@ -700,6 +700,8 @@ const CallScreen = (props, ref) => {
       try {
         if (localStream.getTracks)
           localStream.getTracks().forEach((track) => track.stop());
+        if (localStream.getAudioTracks)
+          localStream.getAudioTracks().forEach((track) => track.stop());
         if (localStream.getVideoTracks)
           localStream.getVideoTracks().forEach((track) => track.stop());
         localStream.release();
@@ -712,25 +714,28 @@ const CallScreen = (props, ref) => {
       isSpeak: true,
       isVisible: false,
       isOfferReceiverd: false,
+      isAnswerSuccess: false,
     });
-    setAnswerSuccess(false);
   };
 
   const sendMessage = (type, msgObj) => {
-    if (refSocket.current) {
-      refSocket.current.emit(type, msgObj, (data) => {});
-    } else {
-      const e = {
-        code: "websocket_error",
-        message: "WebSocket state:" + ws.readyState,
-      };
-      throw e;
-    }
+    return new Promise((resolve, reject) => {
+      if (refSocket.current) {
+        refSocket.current.emit(type, msgObj, (data) => {
+          resolve(data);
+        });
+      } else {
+        const e = {
+          code: "websocket_error",
+          message: "WebSocket state:" + ws.readyState,
+        };
+        reject(e);
+      }
+    });
   };
-
   const onReject = () => {
     let type =
-      isAnswerSuccess || refMakeCall.current
+      state.isAnswerSuccess || refMakeCall.current
         ? constants.socket_type.LEAVE
         : constants.socket_type.REJECT;
     refSocket.current.emit(constants.socket_type.LEAVE, {
@@ -842,7 +847,7 @@ const CallScreen = (props, ref) => {
     </View>
   );
 
-  const buttonAcceptCall = state.isOfferReceiverd && !isAnswerSuccess && (
+  const buttonAcceptCall = state.isOfferReceiverd && !state.isAnswerSuccess && (
     <View style={{ flex: 1, alignItems: "center" }}>
       <TouchableOpacity onPress={onAnswer()} style={{ padding: 10, flex: 1 }}>
         <Image
@@ -855,7 +860,7 @@ const CallScreen = (props, ref) => {
 
   const buttonSpeaker = useMemo(
     () =>
-      isAnswerSuccess && (
+      state.isAnswerSuccess && (
         <View style={{ flex: 1, alignItems: "center" }}>
           <TouchableOpacity onPress={onToggleSpeaker} style={{ padding: 10 }}>
             {state.isSpeak ? (
@@ -872,12 +877,12 @@ const CallScreen = (props, ref) => {
           </TouchableOpacity>
         </View>
       ),
-    [state.isSpeak, isAnswerSuccess]
+    [state.isSpeak, state.isAnswerSuccess]
   );
 
   const buttonMute = useMemo(
     () =>
-      isAnswerSuccess && (
+      state.isAnswerSuccess && (
         <View style={{ flex: 1, alignItems: "center" }}>
           <TouchableOpacity onPress={onToggleMute} style={{ padding: 10 }}>
             {state.isMuted ? (
@@ -894,7 +899,7 @@ const CallScreen = (props, ref) => {
           </TouchableOpacity>
         </View>
       ),
-    [state.isMuted, isAnswerSuccess]
+    [state.isMuted, state.isAnswerSuccess]
   );
 
   const viewActionBottom = useMemo(
@@ -914,12 +919,17 @@ const CallScreen = (props, ref) => {
         {buttonSpeaker}
       </View>
     ),
-    [isAnswerSuccess, state.isMuted, state.isSpeak, state.isOfferReceiverd]
+    [
+      state.isAnswerSuccess,
+      state.isMuted,
+      state.isSpeak,
+      state.isOfferReceiverd,
+    ]
   );
 
   const viewCalling = useMemo(
     () =>
-      !isAnswerSuccess && (
+      !state.isAnswerSuccess && (
         <View
           style={{ flex: 1, position: "relative", backgroundColor: "#6df7db" }}
         >
@@ -980,7 +990,7 @@ const CallScreen = (props, ref) => {
           {viewActionBottom}
         </View>
       ),
-    [localStream, state.isOfferReceiverd, isAnswerSuccess, props.userId]
+    [localStream, state.isOfferReceiverd, state.isAnswerSuccess, props.userId]
   );
 
   const myStream = useMemo(() => {
@@ -1032,7 +1042,7 @@ const CallScreen = (props, ref) => {
         </View>
       )
     );
-  }, [localStream, isAnswerSuccess]);
+  }, [localStream, state.isAnswerSuccess]);
 
   const partnerStream = useMemo(() => {
     return (
@@ -1062,7 +1072,7 @@ const CallScreen = (props, ref) => {
         </View>
       )
     );
-  }, [remoteStreamURL, isAnswerSuccess]);
+  }, [remoteStreamURL, state.isAnswerSuccess]);
   const toastMessage = useMemo(() => {
     return (
       state.showToast && (
@@ -1090,7 +1100,7 @@ const CallScreen = (props, ref) => {
 
   const connectedCall = useMemo(
     () =>
-      isAnswerSuccess && (
+      state.isAnswerSuccess && (
         <View
           style={{ flex: 1, position: "relative", backgroundColor: "#6df7db" }}
         >
@@ -1100,7 +1110,7 @@ const CallScreen = (props, ref) => {
           <View style={{ zIndex: 3, top: 300, alignItems: "center" }}>
             <Timer
               data={{
-                mediaConnected: isAnswerSuccess,
+                mediaConnected: state.isAnswerSuccess,
               }}
               callingName={getCallingName()}
             />
@@ -1114,7 +1124,7 @@ const CallScreen = (props, ref) => {
       remoteStreamURL,
       localStream,
       state.isOfferReceiverd,
-      isAnswerSuccess,
+      state.isAnswerSuccess,
       state.isMuted,
       state.isSpeak,
       props.userId,
