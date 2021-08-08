@@ -68,7 +68,7 @@ const CallScreen = (props, ref) => {
   const refLoginToken = useRef(null);
   const refUserId = useRef(null);
   const refTimeout = useRef(null);
-  const refOfferReceiverd = useRef(null);
+  const refReceiverd = useRef(null);
   const refMakeCall = useRef(false);
   const refOfferData = useRef(null);
   const [localStream, setLocalStream] = useState(false);
@@ -260,7 +260,7 @@ const CallScreen = (props, ref) => {
         //   peer.addTrack(track);
         // }
         peer.addStream(stream);
-        if (!refOfferReceiverd.current) {
+        if (!refReceiverd.current) {
           //chi khi thuc hien cuoc goi thi moi tao offer
           const offer = await peer.createOffer();
           refOffer.current = offer;
@@ -348,28 +348,15 @@ const CallScreen = (props, ref) => {
     }, 2000);
   }, [state.appState, localStream, state.isAnswerSuccess, state.isVisible]);
   // useEffect(() => {
-  //   //     const date = new Date();
-  //   // date.setMinutes(date.getMinutes() + 1);
-  //   // const notification =
-  //   //             new firebase.notifications.Notification()
-  //   //               .setNotificationId(stringUtils.guid())
-  //   //               .setTitle("Cuộc gọi video call")
-  //   //               .setBody("Nhấn vào đây để quay về cuộc gọi");
-  //   //     new firebase.notifications().displayNotification(notification)
-  //   // if((appState ||"").match(/inactive|background/) && isVisible)
-  //   // {
-  //   // console.log("nammn",appState);
-  //   // const notification =
-  //   //       new CallManager.firebase.notifications.Notification()
-  //   //         .setNotificationId(stringUtils.guid())
-  //   //         .setTitle("Cuộc gọi video call")
-  //   //         .setBody("Nhấn vào đây để quay về cuộc gọi");
-  //   //     new CallManager.firebase.notifications().displayNotification(
-  //   //       notification
-  //   //     );
-  //   // }
+  //   const notification =
+  //         new CallManager.firebase.notifications.Notification()
+  //           .setNotificationId(stringUtils.guid())
+  //           .setTitle("Cuộc gọi video call")
+  //           .setBody("Nhấn vào đây để quay về cuộc gọi");
+  //       new CallManager.firebase.notifications().displayNotification(
+  //         notification
+  //       );
   // }, [state.appState]);
-  // },[appState])
   const onTimeOut = () => {
     refTimeout.current = setTimeout(() => {
       onReject();
@@ -457,8 +444,7 @@ const CallScreen = (props, ref) => {
   const onICECandiate = (e) => {
     const { candidate } = e;
     if (candidate) {
-      debugger;
-      if (!refOfferReceiverd.current) {
+      if (!refReceiverd.current) {
         refPendingCandidates.current.push(candidate);
         if (refTimeoutCreateCalling.current) {
           clearTimeout(refTimeoutCreateCalling.current);
@@ -549,7 +535,7 @@ const CallScreen = (props, ref) => {
 
     refOfferData.current = data;
     refCallId.current = data.callId;
-    refOfferReceiverd.current = true;
+    refReceiverd.current = true;
     if (Platform.OS == "ios") {
       // nếu là thiết bị ios thì hiển thị callkeep
       RNCallKeep.displayIncomingCall(data.callId, "", data.data.fromName);
@@ -692,7 +678,7 @@ const CallScreen = (props, ref) => {
     refCallId.current = null;
     refCallingData.current = null;
     refPendingCandidates.current = [];
-    refOfferReceiverd.current = false;
+    refReceiverd.current = false;
     refCreateOfferOrAnswer.current = false;
     refOffer.current = null;
     refMakeCall.current = false;
