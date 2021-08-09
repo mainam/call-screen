@@ -13,6 +13,7 @@ import {
   RTCIceCandidate,
   RTCSessionDescription,
 } from "react-native-webrtc";
+import ActionSheet from "react-native-actionsheet";
 
 import {
   View,
@@ -49,6 +50,7 @@ const PATTERN = [
 const isFront = true; // Use Front camera?
 
 const CallScreen = (props, ref) => {
+  const refActionSheet = useRef(null);
   const refState = useRef(null);
   const refCreateOfferOrAnswer = useRef(null);
   const refPendingCandidates = useRef([]);
@@ -72,12 +74,15 @@ const CallScreen = (props, ref) => {
   const refMakeCall = useRef(false);
   const refOfferData = useRef(null);
   const [localStream, setLocalStream] = useState(false);
+  const refLocalStream = useRef(null);
   const [remoteStreamURL, setRemoteStreamURL] = useState(false);
+  const [isDisableVideo, setDisableVideo] = useState(false);
+  const [isMuted, setMuted] = useState(false);
   const [state, _setState] = useState({
-    isMuted: false,
     isSpeak: true,
     isVisible: false,
     appState: AppState.currentState,
+    isFullPartner: false,
   });
   const setState = (data = {}) => {
     _setState((state) => {
@@ -249,16 +254,30 @@ const CallScreen = (props, ref) => {
       }
     });
   };
+  const getStatusFromStream = (stream) => {
+    let isMuted = !(
+      stream.getAudioTracks && stream?.getAudioTracks()[0]?.enabled
+    );
+    let isDisableVideo = !(
+      stream.getVideoTracks && stream?.getVideoTracks()[0]?.enabled
+    );
+    return { isMuted, isDisableVideo };
+  };
 
   const setupWebRTC = () => {
     return new Promise(async (resolve, reject) => {
       try {
         const stream = await initLocalVideo();
+        refLocalStream.current = stream;
         setLocalStream(stream);
         const peer = createPeer();
+        const { isMuted, isDisableVideo } = getStatusFromStream(stream);
+        setDisableVideo(isDisableVideo);
+        setMuted(isMuted);
         // for (const track of stream.getTracks()) {
         //   peer.addTrack(track);
         // }
+
         peer.addStream(stream);
         if (!refReceiverd.current) {
           //chi khi thuc hien cuoc goi thi moi tao offer
@@ -312,38 +331,36 @@ const CallScreen = (props, ref) => {
         });
     } catch (e) {}
   };
-  const onSwitchCamera = () => {
-    if (localStream?.getVideoTracks) {
-      localStream?.getVideoTracks().forEach((track) => track._switchCamera());
+  const refreshMyVideo = () => {
+    if (
+      refLocalStream.current?.getVideoTracks &&
+      refLocalStream.current?.getVideoTracks()?.length
+    ) {
+      refLocalStream.current?.getVideoTracks().forEach((tract) => {
+        try {
+          track.enabled = false;
+          track.enabled = true;
+          track._switchCamera();
+          track._switchCamera();
+        } catch (error) {}
+      });
+    }
+    if (
+      refLocalStream.current?.getVideoTracks &&
+      refLocalStream.current?.getVideoTracks()?.length
+    ) {
+      refLocalStream.current?.getVideoTracks().forEach((tract) => {
+        try {
+          track.enabled = false;
+          track.enabled = true;
+        } catch (error) {}
+      });
     }
   };
   useEffect(() => {
     setTimeout(async () => {
       if (Platform.OS == "ios") {
-        if (
-          localStream?.getVideoTracks &&
-          localStream?.getVideoTracks()?.length
-        ) {
-          localStream?.getVideoTracks().forEach((tract) => {
-            try {
-              track.enabled = false;
-              track.enabled = true;
-              track._switchCamera();
-              track._switchCamera();
-            } catch (error) {}
-          });
-        }
-        if (
-          localStream?.getAudioTracks &&
-          localStream?.getAudioTracks()?.length
-        ) {
-          localStream?.getAudioTracks().forEach((tract) => {
-            try {
-              track.enabled = false;
-              track.enabled = true;
-            } catch (error) {}
-          });
-        }
+        refreshMyVideo();
       }
     }, 2000);
   }, [state.appState, localStream, state.isAnswerSuccess, state.isVisible]);
@@ -363,32 +380,59 @@ const CallScreen = (props, ref) => {
     }, 30 * 60 * 1000);
   };
 
-  // Mutes the local's outgoing audio
-  const onToggleMute = () => {
-    if (localStream?.getAudioTracks) {
-      localStream?.getAudioTracks().forEach((track) => {
-        track.enabled = !track.enabled;
-        setState({
-          isMuted: !track.enabled,
-        });
-      });
-    } else {
-      if (localStream?.getVideoTracks) {
-        localStream?.getVideoTracks().forEach((track) => {
-          track.enabled = !track.enabled;
-          setState({
-            isMuted: !track.enabled,
+  const onToggle = (type) => () => {
+    let tracks = null;
+    switch (type) {
+      case "video":
+        tracks = refLocalStream.current?.getVideoTracks
+          ? refLocalStream.current?.getVideoTracks()
+          : [];
+        if (tracks?.length) {
+          const isEnabled = !tracks[0].enabled;
+          tracks.forEach((track) => {
+            track.enabled = isEnabled;
           });
+          setDisableVideo(!isEnabled);
+        }
+        break;
+      case "mute":
+        tracks = refLocalStream.current?.getAudioTracks
+          ? refLocalStream.current?.getAudioTracks()
+          : [];
+        if (tracks?.length) {
+          const isEnabled = !tracks[0].enabled;
+          tracks.forEach((track) => {
+            track.enabled = isEnabled;
+          });
+          setMuted(!isEnabled);
+        }
+        break;
+      case "speak":
+        const newValue = !state.isSpeak;
+        setState({
+          isSpeak: newValue,
         });
-      }
+        InCallManager.setForceSpeakerphoneOn(newValue);
+        break;
+      case "camera":
+        if (refLocalStream.current?.getVideoTracks) {
+          refLocalStream.current
+            ?.getVideoTracks()
+            .forEach((track) => track._switchCamera());
+        }
+        break;
+      case "showMore":
+        refActionSheet.current && refActionSheet.current.show();
+        break;
+      case "fullPartner":
+        setState({
+          isFullPartner: !state.isFullPartner,
+        });
+        break;
+      case "refreshMyVideo":
+        refreshMyVideo();
+        break;
     }
-  };
-  const onToggleSpeaker = () => {
-    const newValue = !state.isSpeak;
-    setState({
-      isSpeak: newValue,
-    });
-    InCallManager.setForceSpeakerphoneOn(newValue);
   };
 
   const onICEGratherStateChange = (e) => {
@@ -682,22 +726,29 @@ const CallScreen = (props, ref) => {
     refCreateOfferOrAnswer.current = false;
     refOffer.current = null;
     refMakeCall.current = false;
-    if (localStream) {
+    if (refLocalStream.current) {
       try {
-        if (localStream.getTracks)
-          localStream.getTracks().forEach((track) => track.stop());
-        if (localStream.getAudioTracks)
-          localStream.getAudioTracks().forEach((track) => track.stop());
-        if (localStream.getVideoTracks)
-          localStream.getVideoTracks().forEach((track) => track.stop());
-        localStream.release();
+        if (refLocalStream.current.getTracks)
+          refLocalStream.current.getTracks().forEach((track) => track.stop());
+        if (refLocalStream.current.getAudioTracks)
+          refLocalStream.current
+            .getAudioTracks()
+            .forEach((track) => track.stop());
+        if (refLocalStream.current.getVideoTracks)
+          refLocalStream.current
+            .getVideoTracks()
+            .forEach((track) => track.stop());
+        refLocalStream.current.release();
       } catch (error) {}
     }
     setLocalStream(null);
+    refLocalStream.current = null;
     setRemoteStreamURL(null);
+    setDisableVideo(false);
+    setMuted(false);
     setState({
-      isMute: false,
       isSpeak: true,
+      isFullPartner: false,
       isVisible: false,
       isOfferReceiverd: false,
       isAnswerSuccess: false,
@@ -848,18 +899,14 @@ const CallScreen = (props, ref) => {
     () =>
       state.isAnswerSuccess && (
         <View style={{ flex: 1, alignItems: "center" }}>
-          <TouchableOpacity onPress={onToggleSpeaker} style={{ padding: 10 }}>
-            {state.isSpeak ? (
-              <Image
-                source={require("./images/speaker_selected.png")}
-                style={styles.icon}
-              />
-            ) : (
-              <Image
-                source={require("./images/speaker.png")}
-                style={styles.icon}
-              />
-            )}
+          <TouchableOpacity
+            onPress={onToggle("showMore")}
+            style={{ padding: 10 }}
+          >
+            <Image
+              source={require("./images/ic-more.png")}
+              style={styles.icon}
+            />
           </TouchableOpacity>
         </View>
       ),
@@ -870,8 +917,8 @@ const CallScreen = (props, ref) => {
     () =>
       state.isAnswerSuccess && (
         <View style={{ flex: 1, alignItems: "center" }}>
-          <TouchableOpacity onPress={onToggleMute} style={{ padding: 10 }}>
-            {state.isMuted ? (
+          <TouchableOpacity onPress={onToggle("mute")} style={{ padding: 10 }}>
+            {isMuted ? (
               <Image
                 source={require("./images/mute_selected.png")}
                 style={styles.icon}
@@ -885,7 +932,29 @@ const CallScreen = (props, ref) => {
           </TouchableOpacity>
         </View>
       ),
-    [state.isMuted, state.isAnswerSuccess]
+    [isMuted, state.isAnswerSuccess]
+  );
+
+  const buttonDisableVideo = useMemo(
+    () =>
+      state.isAnswerSuccess && (
+        <View style={{ flex: 1, alignItems: "center" }}>
+          <TouchableOpacity onPress={onToggle("video")} style={{ padding: 10 }}>
+            {isDisableVideo ? (
+              <Image
+                source={require("./images/disable-camera.png")}
+                style={styles.icon}
+              />
+            ) : (
+              <Image
+                source={require("./images/enable-camera.png")}
+                style={styles.icon}
+              />
+            )}
+          </TouchableOpacity>
+        </View>
+      ),
+    [isDisableVideo, state.isAnswerSuccess]
   );
 
   const viewActionBottom = useMemo(
@@ -893,12 +962,16 @@ const CallScreen = (props, ref) => {
       <View
         style={{
           position: "absolute",
-          bottom: 50,
+          bottom: 0,
           display: "flex",
           flexDirection: "row",
           zIndex: 4,
+          backgroundColor: "#FFFFFF20",
+          margin: 20,
+          borderRadius: 20,
         }}
       >
+        {buttonDisableVideo}
         {buttonMute}
         {buttonAcceptCall}
         {buttonEndCall}
@@ -907,7 +980,8 @@ const CallScreen = (props, ref) => {
     ),
     [
       state.isAnswerSuccess,
-      state.isMuted,
+      isDisableVideo,
+      isMuted,
       state.isSpeak,
       state.isOfferReceiverd,
     ]
@@ -998,37 +1072,56 @@ const CallScreen = (props, ref) => {
             display: "flex",
           }}
         >
-          <TouchableOpacity
-            onPress={onSwitchCamera}
-            style={{
-              position: "absolute",
-              top: 0,
-              left: 0,
-              right: 0,
-              zIndex: 4,
-              alignItems: "center",
-            }}
-          >
-            <Image
-              source={require("./images/camera_switch.png")}
-              style={styles.iconSwitch}
-            />
-          </TouchableOpacity>
-          <RTCView
-            style={{
-              width: "100%",
-              height: "100%",
-              zIndex: 3,
-            }}
-            zOrder={1}
-            mirror={false}
-            objectFit="cover"
-            streamURL={localStream.toURL()}
-          />
+          {!isDisableVideo ? (
+            <>
+              <TouchableOpacity
+                onPress={onToggle("camera")}
+                style={{
+                  position: "absolute",
+                  top: 0,
+                  left: 0,
+                  right: 0,
+                  zIndex: 4,
+                  alignItems: "center",
+                }}
+              >
+                <Image
+                  source={require("./images/camera_switch.png")}
+                  style={styles.iconSwitch}
+                />
+              </TouchableOpacity>
+              <RTCView
+                style={{
+                  width: "100%",
+                  height: "100%",
+                  zIndex: 3,
+                }}
+                zOrder={1}
+                mirror={false}
+                objectFit="cover"
+                streamURL={localStream?.toURL()}
+              />
+            </>
+          ) : (
+            <View
+              style={{
+                width: "100%",
+                height: "100%",
+                zIndex: 3,
+                alignItems: "center",
+                justifyContent: "center",
+                backgroundColor: "#FFFFFF20",
+              }}
+            >
+              <Text style={{ color: "#FFF", textAlign: "center" }}>
+                Bạn không chia sẻ hình ảnh
+              </Text>
+            </View>
+          )}
         </View>
       )
     );
-  }, [localStream, state.isAnswerSuccess]);
+  }, [localStream, state.isAnswerSuccess, isDisableVideo]);
 
   const partnerStream = useMemo(() => {
     return (
@@ -1091,9 +1184,14 @@ const CallScreen = (props, ref) => {
           style={{ flex: 1, position: "relative", backgroundColor: "#6df7db" }}
         >
           {partnerStream}
-          {myStream}
+          {!state.isFullPartner && myStream}
           {toastMessage}
-          <View style={{ zIndex: 3, top: 300, alignItems: "center" }}>
+          <View
+            style={[
+              { zIndex: 3, alignItems: "center" },
+              { top: state.isFullPartner ? 50 : 300 },
+            ]}
+          >
             <Timer
               data={{
                 mediaConnected: state.isAnswerSuccess,
@@ -1111,9 +1209,11 @@ const CallScreen = (props, ref) => {
       localStream,
       state.isOfferReceiverd,
       state.isAnswerSuccess,
-      state.isMuted,
+      isDisableVideo,
+      isMuted,
       state.isSpeak,
       props.userId,
+      state.isFullPartner,
     ]
   );
 
@@ -1127,6 +1227,32 @@ const CallScreen = (props, ref) => {
       <StatusBar translucent={true} backgroundColor={"transparent"} />
       {viewCalling}
       {connectedCall}
+
+      <ActionSheet
+        title={"Lựa chọn khác"}
+        ref={refActionSheet}
+        options={[
+          state.isSpeak ? "Tắt loa ngoài" : "Bật loa ngoài",
+          state.isFullPartner ? "Hiện thông tin của tôi" : "Mở rộng màn hình",
+          "Làm mới camera của tôi",
+          "Huỷ",
+        ]}
+        cancelButtonIndex={3}
+        destructiveButtonIndex={3}
+        onPress={(index) => {
+          switch (index) {
+            case 0:
+              onToggle("speak")();
+              break;
+            case 1:
+              onToggle("fullPartner")();
+              break;
+            case 2:
+              onToggle("refreshMyVideo")();
+              break;
+          }
+        }}
+      />
     </Modal>
   );
 };
