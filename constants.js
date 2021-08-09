@@ -20,5 +20,7 @@ module.exports = {
     TYPING: "TYPING",
     QUESTION: "QUESTION_",
     ERROR: "ERROR",
+    TURN_OFF_VIDEO:"TURN_OFF_VIDEO",
+    TURN_OFF_AUDIO:"TURN_OFF_AUDIO"
   },
 };

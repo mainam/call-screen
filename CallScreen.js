@@ -78,6 +78,8 @@ const CallScreen = (props, ref) => {
   const [remoteStreamURL, setRemoteStreamURL] = useState(false);
   const [isDisableVideo, setDisableVideo] = useState(false);
   const [isMuted, setMuted] = useState(false);
+  const [isPartnerTurnOfVideo, setPartnerTurnOfVideo] = useState(false);
+  const [isPartnerMuted, setPartnerMute] = useState(false);
   const [state, _setState] = useState({
     isSpeak: true,
     isVisible: false,
@@ -90,7 +92,7 @@ const CallScreen = (props, ref) => {
         ...(refState.current ? refState.current : state),
         ...data,
       };
-      return refState.current;
+      return { ...refState.current };
     });
   };
   useEffect(() => {
@@ -393,6 +395,11 @@ const CallScreen = (props, ref) => {
             track.enabled = isEnabled;
           });
           setDisableVideo(!isEnabled);
+          sendMessage(constants.socket_type.TURN_OFF_VIDEO, {
+            userId: props.userId,
+            callId: refCallId.current,
+            status: !isEnabled,
+          });
         }
         break;
       case "mute":
@@ -405,6 +412,11 @@ const CallScreen = (props, ref) => {
             track.enabled = isEnabled;
           });
           setMuted(!isEnabled);
+          sendMessage(constants.socket_type.TURN_OFF_AUDIO, {
+            userId: props.userId,
+            callId: refCallId.current,
+            status: !isEnabled,
+          });
         }
         break;
       case "speak":
@@ -676,6 +688,30 @@ const CallScreen = (props, ref) => {
     }
   };
 
+  const onTurnOffAudio = async (data = {}) => {
+    if (refCallId.current) {
+      const { audio = [], callId } = data;
+      if (callId == refCallId.current) {
+        const partnerSetting = audio.find(
+          (item) => item.userId != props.userId
+        );
+        setPartnerMute(partnerSetting?.mute);
+      }
+    }
+  };
+
+  const onTurnOffVideo = async (data = {}) => {
+    if (refCallId.current) {
+      const { video = [], callId } = data;
+      if (callId == refCallId.current) {
+        const partnerSetting = video.find(
+          (item) => item.userId != props.userId
+        );
+        setPartnerTurnOfVideo(partnerSetting?.disable);
+      }
+    }
+  };
+
   const onTimeOutPair = (data = {}) => {};
 
   const onLeave = (data = {}) => {
@@ -746,6 +782,8 @@ const CallScreen = (props, ref) => {
     setRemoteStreamURL(null);
     setDisableVideo(false);
     setMuted(false);
+    setPartnerTurnOfVideo(false);
+    setPartnerMute(false);
     setState({
       isSpeak: true,
       isFullPartner: false,
@@ -871,6 +909,14 @@ const CallScreen = (props, ref) => {
       refSocket.current.on(constants.socket_type.TIMEOUT_PAIR, onTimeOutPair);
       refSocket.current.on(constants.socket_type.OFFER, onOfferReceived);
       refSocket.current.on(constants.socket_type.ANSWER, onAnswerReceived);
+      refSocket.current.on(
+        constants.socket_type.TURN_OFF_VIDEO,
+        onTurnOffVideo
+      );
+      refSocket.current.on(
+        constants.socket_type.TURN_OFF_AUDIO,
+        onTurnOffAudio
+      );
       refSocket.current.on(constants.socket_type.LEAVE, onLeave);
       refSocket.current.connect();
     }
@@ -991,7 +1037,7 @@ const CallScreen = (props, ref) => {
     () =>
       !state.isAnswerSuccess && (
         <View
-          style={{ flex: 1, position: "relative", backgroundColor: "#6df7db" }}
+          style={{ flex: 1, position: "relative", backgroundColor: "#3e3e3e" }}
         >
           {localStream && (
             <RTCView
@@ -1136,22 +1182,51 @@ const CallScreen = (props, ref) => {
             zIndex: 1,
           }}
         >
-          <RTCView
-            style={{
-              width: "100%",
-              height: "100%",
-              zIndex: 2,
-              position: "absolute",
-            }}
-            zOrder={-1}
-            mirror={false}
-            objectFit="cover"
-            streamURL={remoteStreamURL}
-          />
+          {!isPartnerTurnOfVideo ? (
+            <RTCView
+              style={{
+                width: "100%",
+                height: "100%",
+                zIndex: 2,
+                position: "absolute",
+              }}
+              zOrder={-1}
+              mirror={false}
+              objectFit="cover"
+              streamURL={remoteStreamURL}
+            />
+          ) : (
+            <View
+              style={{
+                width: "100%",
+                height: "100%",
+                zIndex: 2,
+                backgroundColor: "#3e3e3e",
+                position: "absolute",
+                justifyContent: "flex-end",
+                alignContent: "flex-end",
+              }}
+            >
+              <Text
+                style={{
+                  color: "#fff",
+                  marginBottom: 150,
+                  textAlign: "center",
+                }}
+              >
+                {getCallingName() + " đang không chia sẻ hình ảnh"}
+              </Text>
+            </View>
+          )}
         </View>
       )
     );
-  }, [remoteStreamURL, state.isAnswerSuccess]);
+  }, [
+    remoteStreamURL,
+    state.isAnswerSuccess,
+    isPartnerTurnOfVideo,
+    isPartnerMuted,
+  ]);
   const toastMessage = useMemo(() => {
     return (
       state.showToast && (
@@ -1181,7 +1256,7 @@ const CallScreen = (props, ref) => {
     () =>
       state.isAnswerSuccess && (
         <View
-          style={{ flex: 1, position: "relative", backgroundColor: "#6df7db" }}
+          style={{ flex: 1, position: "relative", backgroundColor: "#3e3e3e" }}
         >
           {partnerStream}
           {!state.isFullPartner && myStream}
@@ -1214,6 +1289,8 @@ const CallScreen = (props, ref) => {
       state.isSpeak,
       props.userId,
       state.isFullPartner,
+      isPartnerTurnOfVideo,
+      isPartnerMuted,
     ]
   );
 
