@@ -109,6 +109,11 @@ const CallScreen = (props, ref) => {
   useEffect(() => {
     refUserId.current = props.userId;
   }, [props.loginToken, props.userId]);
+  useEffect(() => {
+    if (!state.isVisible) {
+      resetState();
+    }
+  }, [state.isVisible]);
   useImperativeHandle(ref, () => ({
     startCall,
   }));
@@ -146,6 +151,10 @@ const CallScreen = (props, ref) => {
       });
     }, 5000);
   };
+  const rnCallKeepEndCall = (callId, status) => {
+    if (!callId) return;
+    else RNCallKeep.reportEndCallWithUUID(callId, status);
+  };
   useEffect(() => {
     showNotice({
       message:
@@ -167,7 +176,7 @@ const CallScreen = (props, ref) => {
   };
   const getCallingName = () => {
     if (refCallingData.current) {
-      if (props.userId == refCallingData.current.from) {
+      if (refUserId.current == refCallingData.current.from) {
         return refCallingData.current.toName;
       } else {
         return refCallingData.current.fromName;
@@ -364,16 +373,26 @@ const CallScreen = (props, ref) => {
       }
     }, 2000);
   }, [state.appState, localStream, state.isAnswerSuccess, state.isVisible]);
-  // useEffect(() => {
-  //   const notification =
-  //         new CallManager.firebase.notifications.Notification()
-  //           .setNotificationId(stringUtils.guid())
-  //           .setTitle("Cuộc gọi video call")
-  //           .setBody("Nhấn vào đây để quay về cuộc gọi");
-  //       new CallManager.firebase.notifications().displayNotification(
-  //         notification
-  //       );
-  // }, [state.appState]);
+
+  useEffect(() => {
+    //tự động turn off video khi app inactive
+    if (refCallId.current) {
+      if (state.appState != "active") {
+        sendMessage(constants.socket_type.TURN_OFF_VIDEO, {
+          userId: refUserId.current,
+          callId: refCallId.current,
+          status: true,
+        });
+      } else {
+        sendMessage(constants.socket_type.TURN_OFF_VIDEO, {
+          userId: refUserId.current,
+          callId: refCallId.current,
+          status: isDisableVideo,
+        });
+      }
+    }
+  }, [state.appState]);
+
   const onTimeOut = () => {
     refTimeout.current = setTimeout(() => {
       onReject();
@@ -394,7 +413,7 @@ const CallScreen = (props, ref) => {
           });
           setDisableVideo(!isEnabled);
           sendMessage(constants.socket_type.TURN_OFF_VIDEO, {
-            userId: props.userId,
+            userId: refUserId.current,
             callId: refCallId.current,
             status: !isEnabled,
           });
@@ -411,7 +430,7 @@ const CallScreen = (props, ref) => {
           });
           setMuted(!isEnabled);
           sendMessage(constants.socket_type.TURN_OFF_AUDIO, {
-            userId: props.userId,
+            userId: refUserId.current,
             callId: refCallId.current,
             status: !isEnabled,
           });
@@ -514,7 +533,7 @@ const CallScreen = (props, ref) => {
     if (refPeer.current && data.callId == refCallId.current && data.ice) {
       //sau khi nhận dc ice từ partner thì sẽ add vào danh sách pending candidas
       refPendingCandidates.current.push(data.ice);
-      if (refPeer.current.remoteDescription()) {
+      if (refPeer.current.remoteDescription) {
         //kiểm tra xem peer đã add xong remote description chưa
         //nếu đã add xong rồi thì tiến hành add các pending remote ic gửi từ partner
         addRemoteICE();
@@ -528,7 +547,7 @@ const CallScreen = (props, ref) => {
         //nếu là người nhận
         sendMessage(constants.socket_type.CANDIDATE, {
           //sau khi lấy dc candidate xong thì emit lên server socket để bắn sang người gọi luôn
-          userId: props.userId,
+          userId: refUserId.current,
           ice: candidate,
           callId: refCallId.current,
         });
@@ -554,7 +573,7 @@ const CallScreen = (props, ref) => {
     if (refAppState.current.match(/inactive|background/)) {
       setState({ isVisible: true });
     } else {
-      if (Platform.OS == "ios") RNCallKeep.reportEndCallWithUUID(callUUID, 2);
+      if (Platform.OS == "ios") rnCallKeepEndCall(callUUID, 2);
     }
     setTimeout(() => {
       onAnswer(callUUID)();
@@ -578,10 +597,10 @@ const CallScreen = (props, ref) => {
     }
   };
   const onSocketOffer = async (data = {}) => {
-    if (refCallId.current || props.userId != data.data.to) {
+    if (refCallId.current || refUserId.current != data.data.to) {
       if (Platform.OS == "ios") {
         //mà device là ios thì tắt callkeep (androi không dùng callkeep) và đánh dấu reject trong appdelegate
-        RNCallKeep.reportEndCallWithUUID(data.callId, 2);
+        rnCallKeepEndCall(data.callId, 2);
         if (data.callId && VideoCallModule?.reject) {
           VideoCallModule.reject(data.callId);
         }
@@ -591,11 +610,11 @@ const CallScreen = (props, ref) => {
         refSocket.current.emit(constants.socket_type.LEAVE, {
           // gửi 1 emit lên server để báo bận
           callId: data.callId,
-          userId: props.userId,
+          userId: refUserId.current,
           type: constants.socket_type.BUSY,
         });
       } else {
-        if (props.userId != data.data.to) {
+        if (refUserId.current != data.data.to) {
           //nếu user của call <> với user đang dăng nhập thì reject cuộc gọi và emit event logout theo device id và useId
           refSocket.current.emit(constants.socket_type.LEAVE_AND_SIGNOUT, {
             // gửi 1 emit lên server để báo bận và remove token theo deviceId
@@ -608,7 +627,7 @@ const CallScreen = (props, ref) => {
     }
 
     if (
-      data.from == props.userId ||
+      data.from == refUserId.current ||
       refIgnoreCallIds.current.includes(data.callId)
     ) {
       //nếu offer nhận được được thực hiện từ chính bạn thì bỏ qua
@@ -629,9 +648,59 @@ const CallScreen = (props, ref) => {
     setState({ isVisible: true, isReceiverd: true }); //khi cuộc gọi đến thì hiển thi luôn màn hình cuộc gọi
   };
 
-  const onAnswer = (callUUid) => async () => {
+  const getCallData = ({ callId }) => {
+    return new Promise((resolve, reject) => {
+      fetch(CallManager.host + "/api/call/" + callId, {
+        method: "GET", // *GET, POST, PUT, DELETE, etc.
+        headers: {
+          "Content-Type": "application/json",
+        }, // body data type must match "Content-Type" header
+      })
+        .then((s) => s.json())
+        .then(async (s) => {
+          switch (s?.code) {
+            case 0:
+              resolve(s.data);
+              break;
+            default:
+              props.showMessage &&
+                props.showMessage({ message: s.message, type: 0 });
+              resolve(null);
+          }
+        })
+        .catch((e) => {
+          props.showMessage &&
+            props.showMessage({ message: e?.message, type: 2 });
+          resolve(null);
+        });
+    });
+  };
+
+  const onAnswer = (callId) => async () => {
     try {
-      if (callUUid && refCallId.current != callUUid) return;
+      if (!refOfferData.current) {
+        // nếu nhấn từ callkeep mà trong app chưa có thông tin cuộc gọi
+        if (!callId) {
+          rnCallKeepEndCall(callId, 2); //thì thực hiện endcall callkeep
+          setState({ isVisible: false }); // tắt popup call
+          return;
+        }
+        const data = await getCallData({ callId: callId }); // thì thực hiện gọi lên server để lấy thông tin cuộc gọi
+        refOfferData.current = data;
+        if (!refOfferData.current) {
+          //nếu vẫn không lấy đc thông tin cuộc gọi
+          rnCallKeepEndCall(callId, 2); //thì thực hiện endcall callkeep
+          setState({ isVisible: false }); // tắt popup call
+        }
+        refCallingData.current = data.data || {}; // giữ lại thông tin user trong cuộc gọi
+        refCallId.current = data.callId; //giữ lại callId
+        refReceiverd.current = true; //đánh dấu là đã nhận cuộc gọi
+      }
+      if (callId && refCallId.current != callId) {
+        rnCallKeepEndCall(callId, 2); //thì thực hiện endcall callkeep
+        return;
+      }
+
       setState({ isVisible: true, isAnswerSuccess: true });
       onTimeOut();
 
@@ -664,7 +733,7 @@ const CallScreen = (props, ref) => {
             //đồng thời emit event tới socket server để đánh dấu là đã answer call này.
             callId: refCallId.current, //ở đây phải dùng socket emit để broadcast tới các connection khác reject call khi 1 user đã answer
             answer: answer, //trong emit này thì có đẩy answer lên cùng.
-            userId: props.userId,
+            userId: refUserId.current || refUserId.current,
           });
           callPickUp();
           resolve(true);
@@ -672,17 +741,19 @@ const CallScreen = (props, ref) => {
       };
       if (Platform.OS == "ios") {
         // nếu là ios thì endcall callkeep
-        RNCallKeep.reportEndCallWithUUID(refCallId.current, 2);
+        rnCallKeepEndCall(refCallId.current, 2);
         setTimeout(answer, 1000); //chờ khoảng 1s để callkeep tắt.
       } else {
         answer(); //ngược lại với android thì answer luôn.
       }
     } catch (error) {
+      rnCallKeepEndCall(refCallId.current || callId, 2);
       console.log(error);
     }
   };
 
   const addRemoteICE = () => {
+    console.log("addRemoteICE");
     if (refPeer.current)
       refPendingCandidates.current.forEach((item) => {
         if (item && !item.added) {
@@ -699,6 +770,7 @@ const CallScreen = (props, ref) => {
       await refPeer.current.setRemoteDescription(
         new RTCSessionDescription(data.answer)
       );
+      console.log("RTCSessionDescription");
       //sau khi nhận cuộc gọi xong thì tiến hành add remote ice vào peer
       addRemoteICE();
       setState({
@@ -712,7 +784,7 @@ const CallScreen = (props, ref) => {
       const { audio = [], callId } = data;
       if (callId == refCallId.current) {
         const partnerSetting = audio.find(
-          (item) => item.userId != props.userId
+          (item) => item.userId != refUserId.current
         );
         setPartnerMute(partnerSetting?.mute);
       }
@@ -724,7 +796,7 @@ const CallScreen = (props, ref) => {
       const { video = [], callId } = data;
       if (callId == refCallId.current) {
         const partnerSetting = video.find(
-          (item) => item.userId != props.userId
+          (item) => item.userId != refUserId.current
         );
         setPartnerTurnOfVideo(partnerSetting?.disable);
       }
@@ -755,13 +827,13 @@ const CallScreen = (props, ref) => {
   };
 
   const resetState = () => {
+    debugger;
     stopSound();
     if (refCallId.current && VideoCallModule?.reject) {
       VideoCallModule.reject(refCallId.current);
     }
     if (refCallId.current) {
-      if (Platform.OS == "ios")
-        RNCallKeep.reportEndCallWithUUID(refCallId.current, 2);
+      if (Platform.OS == "ios") rnCallKeepEndCall(refCallId.current, 2);
     }
 
     if (refPeer.current) {
@@ -833,7 +905,7 @@ const CallScreen = (props, ref) => {
         ? constants.socket_type.LEAVE
         : constants.socket_type.REJECT;
     refSocket.current.emit(constants.socket_type.LEAVE, {
-      userId: props.userId,
+      userId: refUserId.current,
       callId: refCallId.current, // state.callId,
       type,
     });
@@ -898,7 +970,7 @@ const CallScreen = (props, ref) => {
     refSocket.current &&
       refSocket.current.emit(constants.socket_type.CONNECT, {
         token,
-        id: props.userId,
+        id: refUserId.current,
         platform: Platform.OS,
         deviceId: CallManager.deviceId,
         packageName: CallManager.packageName,
@@ -911,7 +983,7 @@ const CallScreen = (props, ref) => {
         transports: ["websocket"],
         query: {
           token: props.loginToken, //verify socket io với login token,
-          userId: props.userId,
+          userId: refUserId.current,
         },
         upgrade: true,
         reconnection: true,
@@ -945,7 +1017,7 @@ const CallScreen = (props, ref) => {
   };
 
   const buttonEndCall = (
-    <View style={{ flex: 1, alignItems: "center" }}>
+    <View style={styles.btnAction}>
       <TouchableOpacity onPress={onReject} style={{ padding: 10, flex: 1 }}>
         <Image source={require("./images/end_call.png")} style={styles.icon} />
       </TouchableOpacity>
@@ -953,7 +1025,7 @@ const CallScreen = (props, ref) => {
   );
 
   const buttonAcceptCall = state.isReceiverd && !state.isAnswerSuccess && (
-    <View style={{ flex: 1, alignItems: "center" }}>
+    <View style={styles.btnAction}>
       <TouchableOpacity onPress={onAnswer()} style={{ padding: 10, flex: 1 }}>
         <Image
           source={require("./images/accept_call.png")}
@@ -966,7 +1038,7 @@ const CallScreen = (props, ref) => {
   const buttonSpeaker = useMemo(
     () =>
       state.isAnswerSuccess && (
-        <View style={{ flex: 1, alignItems: "center" }}>
+        <View style={styles.btnAction}>
           <TouchableOpacity
             onPress={onToggle("showMore")}
             style={{ padding: 10 }}
@@ -984,7 +1056,7 @@ const CallScreen = (props, ref) => {
   const buttonMute = useMemo(
     () =>
       state.isAnswerSuccess && (
-        <View style={{ flex: 1, alignItems: "center" }}>
+        <View style={styles.btnAction}>
           <TouchableOpacity onPress={onToggle("mute")} style={{ padding: 10 }}>
             {isMuted ? (
               <Image
@@ -1006,7 +1078,7 @@ const CallScreen = (props, ref) => {
   const buttonDisableVideo = useMemo(
     () =>
       state.isAnswerSuccess && (
-        <View style={{ flex: 1, alignItems: "center" }}>
+        <View style={styles.btnAction}>
           <TouchableOpacity onPress={onToggle("video")} style={{ padding: 10 }}>
             {isDisableVideo ? (
               <Image
@@ -1359,6 +1431,7 @@ const CallScreen = (props, ref) => {
 CallScreen.propTypes = {};
 
 const styles = StyleSheet.create({
+  btnAction: { flex: 1, alignItems: "center" },
   icon: {
     height: 60,
     width: 60,
