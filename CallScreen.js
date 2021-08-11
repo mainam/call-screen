@@ -1018,7 +1018,7 @@ const CallScreen = (props, ref) => {
 
   const buttonEndCall = (
     <View style={styles.btnAction}>
-      <TouchableOpacity onPress={onReject} style={{ padding: 10, flex: 1 }}>
+      <TouchableOpacity onPress={onReject} style={styles.btnStyle}>
         <Image source={require("./images/end_call.png")} style={styles.icon} />
       </TouchableOpacity>
     </View>
@@ -1026,7 +1026,7 @@ const CallScreen = (props, ref) => {
 
   const buttonAcceptCall = state.isReceiverd && !state.isAnswerSuccess && (
     <View style={styles.btnAction}>
-      <TouchableOpacity onPress={onAnswer()} style={{ padding: 10, flex: 1 }}>
+      <TouchableOpacity onPress={onAnswer()} style={styles.btnStyle}>
         <Image
           source={require("./images/accept_call.png")}
           style={styles.icon}
@@ -1041,7 +1041,7 @@ const CallScreen = (props, ref) => {
         <View style={styles.btnAction}>
           <TouchableOpacity
             onPress={onToggle("showMore")}
-            style={{ padding: 10 }}
+            style={styles.btnStyle}
           >
             <Image
               source={require("./images/ic-more.png")}
@@ -1057,7 +1057,7 @@ const CallScreen = (props, ref) => {
     () =>
       state.isAnswerSuccess && (
         <View style={styles.btnAction}>
-          <TouchableOpacity onPress={onToggle("mute")} style={{ padding: 10 }}>
+          <TouchableOpacity onPress={onToggle("mute")} style={styles.btnStyle}>
             {isMuted ? (
               <Image
                 source={require("./images/mute_selected.png")}
@@ -1079,7 +1079,7 @@ const CallScreen = (props, ref) => {
     () =>
       state.isAnswerSuccess && (
         <View style={styles.btnAction}>
-          <TouchableOpacity onPress={onToggle("video")} style={{ padding: 10 }}>
+          <TouchableOpacity onPress={onToggle("video")} style={styles.btnStyle}>
             {isDisableVideo ? (
               <Image
                 source={require("./images/disable-camera.png")}
@@ -1099,18 +1099,7 @@ const CallScreen = (props, ref) => {
 
   const viewActionBottom = useMemo(
     () => (
-      <View
-        style={{
-          position: "absolute",
-          bottom: 0,
-          display: "flex",
-          flexDirection: "row",
-          zIndex: 4,
-          backgroundColor: "#00000080",
-          margin: 20,
-          borderRadius: 20,
-        }}
-      >
+      <View style={styles.viewActionBottom}>
         {buttonDisableVideo}
         {buttonMute}
         {buttonAcceptCall}
@@ -1130,61 +1119,26 @@ const CallScreen = (props, ref) => {
   const viewCalling = useMemo(
     () =>
       !state.isAnswerSuccess && (
-        <View
-          style={{ flex: 1, position: "relative", backgroundColor: "#3e3e3e" }}
-        >
+        <View style={styles.callingScreen}>
           {localStream && (
             <RTCView
-              style={{ width: "100%", height: "100%" }}
+              style={styles.rtcFullScreen}
               zOrder={-1}
               mirror={false}
               objectFit="cover"
               streamURL={localStream.toURL()}
             />
           )}
-          <View
-            style={{
-              position: "absolute",
-              top: 100,
-              alignItems: "center",
-              left: 0,
-              right: 0,
-            }}
-          >
-            <View
-              style={{
-                width: 120,
-                height: 120,
-                borderWidth: 2,
-                borderColor: "#FFF",
-                borderRadius: 110,
-                alignItems: "center",
-                justifyContent: "center",
-                marginBottom: 50,
-              }}
-            >
-              <Image
-                source={CallManager.userAvatar}
-                style={{ width: 100, height: 100 }}
-              />
+          <View style={styles.centerView}>
+            <View style={styles.avatarView}>
+              <Image source={CallManager.userAvatar} style={styles.avatar} />
             </View>
             {refMakeCall.current && (
-              <Text style={{ fontSize: 15, color: "#FFF" }}>Đang gọi</Text>
+              <Text style={styles.calling}>Đang gọi</Text>
             )}
-            <Text
-              style={{
-                marginTop: 30,
-                fontSize: 25,
-                color: "#FFF",
-                fontWeight: "700",
-              }}
-            >
-              {getCallingName()}
-            </Text>
+            <Text style={styles.callInfo}>{getCallingName()}</Text>
             {!refMakeCall.current && (
-              <Text style={{ fontSize: 15, color: "#FFF" }}>
-                Đang gọi cho bạn
-              </Text>
+              <Text style={styles.calling}>Đang gọi cho bạn</Text>
             )}
           </View>
           {viewActionBottom}
@@ -1196,34 +1150,12 @@ const CallScreen = (props, ref) => {
   const myStream = useMemo(() => {
     return (
       localStream && (
-        <View
-          style={{
-            width: 150,
-            height: 200,
-            position: "absolute",
-            right: 20,
-            top: 50,
-            zIndex: 2,
-            borderStyle: "dashed",
-            borderRadius: 0.5,
-            borderWidth: 2,
-            borderColor: "#FFF",
-            overflow: "hidden",
-            display: "flex",
-          }}
-        >
+        <View style={styles.viewMyStream}>
           {!isDisableVideo ? (
             <>
               <TouchableOpacity
                 onPress={onToggle("camera")}
-                style={{
-                  position: "absolute",
-                  top: 0,
-                  left: 0,
-                  right: 0,
-                  zIndex: 4,
-                  alignItems: "center",
-                }}
+                style={styles.btnSwitchCamera}
               >
                 <Image
                   source={require("./images/camera_switch.png")}
@@ -1231,11 +1163,7 @@ const CallScreen = (props, ref) => {
                 />
               </TouchableOpacity>
               <RTCView
-                style={{
-                  width: "100%",
-                  height: "100%",
-                  zIndex: 3,
-                }}
+                style={styles.rtcMyStream}
                 zOrder={1}
                 mirror={false}
                 objectFit="cover"
@@ -1243,17 +1171,8 @@ const CallScreen = (props, ref) => {
               />
             </>
           ) : (
-            <View
-              style={{
-                width: "100%",
-                height: "100%",
-                zIndex: 3,
-                alignItems: "center",
-                justifyContent: "center",
-                backgroundColor: "#FFFFFF20",
-              }}
-            >
-              <Text style={{ color: "#FFF", textAlign: "center" }}>
+            <View style={styles.viewMyStreamEmpty}>
+              <Text style={styles.tipTurnOfVideo}>
                 Bạn không chia sẻ hình ảnh
               </Text>
             </View>
@@ -1266,48 +1185,18 @@ const CallScreen = (props, ref) => {
   const partnerStream = useMemo(() => {
     return (
       remoteStreamURL && (
-        <View
-          style={{
-            position: "absolute",
-            top: 0,
-            bottom: 0,
-            left: 0,
-            right: 0,
-            zIndex: 1,
-          }}
-        >
+        <View style={styles.viewPartnerStream}>
           {!isPartnerTurnOfVideo ? (
             <RTCView
-              style={{
-                width: "100%",
-                height: "100%",
-                zIndex: 2,
-                position: "absolute",
-              }}
+              style={styles.rtcPartnerStream}
               zOrder={-1}
               mirror={false}
               objectFit="cover"
               streamURL={remoteStreamURL}
             />
           ) : (
-            <View
-              style={{
-                width: "100%",
-                height: "100%",
-                zIndex: 2,
-                backgroundColor: "#3e3e3e",
-                position: "absolute",
-                justifyContent: "flex-end",
-                alignContent: "flex-end",
-              }}
-            >
-              <Text
-                style={{
-                  color: "#fff",
-                  marginBottom: 150,
-                  textAlign: "center",
-                }}
-              >
+            <View style={styles.rtcPartnerStreamEmpty}>
+              <Text style={styles.tipPartnerTurnOfVideo}>
                 {getCallingName() + " đang không chia sẻ hình ảnh"}
               </Text>
             </View>
@@ -1324,23 +1213,8 @@ const CallScreen = (props, ref) => {
   const toastMessage = useMemo(() => {
     return (
       state.showToast && (
-        <View
-          style={{
-            position: "absolute",
-            top: 0,
-            left: 0,
-            right: 0,
-            zIndex: 5,
-            paddingTop: 30,
-            backgroundColor: "#00000090",
-            paddingBottom: 10,
-            paddingLeft: 10,
-            paddingRight: 10,
-          }}
-        >
-          <Text style={{ color: "#FFF", fontSize: 16 }}>
-            {state.toastMessage}
-          </Text>
+        <View style={styles.toastView}>
+          <Text style={styles.toastContent}>{state.toastMessage}</Text>
         </View>
       )
     );
@@ -1349,17 +1223,12 @@ const CallScreen = (props, ref) => {
   const connectedCall = useMemo(
     () =>
       state.isAnswerSuccess && (
-        <View
-          style={{ flex: 1, position: "relative", backgroundColor: "#3e3e3e" }}
-        >
+        <View style={styles.connectedScreen}>
           {partnerStream}
           {!state.isFullPartner && myStream}
           {toastMessage}
           <View
-            style={[
-              { zIndex: 3, alignItems: "center" },
-              { top: state.isFullPartner ? 50 : 300 },
-            ]}
+            style={[styles.timerView, { top: state.isFullPartner ? 50 : 300 }]}
           >
             <Timer
               data={{
@@ -1432,14 +1301,135 @@ CallScreen.propTypes = {};
 
 const styles = StyleSheet.create({
   btnAction: { flex: 1, alignItems: "center" },
+  viewActionBottom: {
+    position: "absolute",
+    bottom: 0,
+    display: "flex",
+    flexDirection: "row",
+    zIndex: 4,
+    backgroundColor: "#00000080",
+    margin: 20,
+    borderRadius: 20,
+  },
+  callingScreen: { flex: 1, position: "relative", backgroundColor: "#3e3e3e" },
+  connectedScreen: {
+    flex: 1,
+    position: "relative",
+    backgroundColor: "#3e3e3e",
+  },
+  timerView: { zIndex: 3, alignItems: "center" },
+  callInfo: {
+    marginTop: 30,
+    fontSize: 25,
+    color: "#FFF",
+    fontWeight: "700",
+  },
+  calling: { fontSize: 15, color: "#FFF" },
+  avatarView: {
+    width: 120,
+    height: 120,
+    borderWidth: 2,
+    borderColor: "#FFF",
+    borderRadius: 110,
+    alignItems: "center",
+    justifyContent: "center",
+    marginBottom: 50,
+  },
+  avatar: { width: 100, height: 100 },
+  centerView: {
+    position: "absolute",
+    top: 100,
+    alignItems: "center",
+    left: 0,
+    right: 0,
+  },
+  rtcFullScreen: { width: "100%", height: "100%" },
+  viewMyStream: {
+    width: 150,
+    height: 200,
+    position: "absolute",
+    right: 20,
+    top: 50,
+    zIndex: 2,
+    borderStyle: "dashed",
+    borderRadius: 0.5,
+    borderWidth: 2,
+    borderColor: "#FFF",
+    overflow: "hidden",
+    display: "flex",
+  },
+  viewMyStreamEmpty: {
+    width: "100%",
+    height: "100%",
+    zIndex: 3,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "#FFFFFF20",
+  },
+  btnSwitchCamera: {
+    position: "absolute",
+    top: 0,
+    left: 0,
+    right: 0,
+    zIndex: 4,
+    alignItems: "center",
+  },
+  rtcMyStream: {
+    width: "100%",
+    height: "100%",
+    zIndex: 3,
+  },
+  tipTurnOfVideo: { color: "#FFF", textAlign: "center" },
   icon: {
     height: 60,
     width: 60,
+  },
+  viewPartnerStream: {
+    position: "absolute",
+    top: 0,
+    bottom: 0,
+    left: 0,
+    right: 0,
+    zIndex: 1,
+  },
+  rtcPartnerStream: {
+    width: "100%",
+    height: "100%",
+    zIndex: 2,
+    position: "absolute",
+  },
+  rtcPartnerStreamEmpty: {
+    width: "100%",
+    height: "100%",
+    zIndex: 2,
+    backgroundColor: "#3e3e3e",
+    position: "absolute",
+    justifyContent: "flex-end",
+    alignContent: "flex-end",
+  },
+  tipPartnerTurnOfVideo: {
+    color: "#fff",
+    marginBottom: 150,
+    textAlign: "center",
   },
   iconSwitch: {
     height: 40,
     width: 40,
   },
+  btnStyle: { padding: 10, flex: 1 },
+  toastView: {
+    position: "absolute",
+    top: 0,
+    left: 0,
+    right: 0,
+    zIndex: 5,
+    paddingTop: 30,
+    backgroundColor: "#00000090",
+    paddingBottom: 10,
+    paddingLeft: 10,
+    paddingRight: 10,
+  },
+  toastContent: { color: "#FFF", fontSize: 16 },
 });
 
 export default forwardRef(CallScreen);
