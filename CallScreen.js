@@ -52,13 +52,12 @@ const isFront = true; // Use Front camera?
 const CallScreen = (props, ref) => {
   const refActionSheet = useRef(null);
   const refState = useRef(null);
-  const refCreateOfferOrAnswer = useRef(null);
+  const refCreateCalling = useRef(null);
   const refPendingCandidates = useRef([]);
   const refTimeoutCreateCalling = useRef(null);
   const refTimeOutToast = useRef(null);
   const refCallId = useRef(null);
   const refOffer = useRef(null);
-  const refAnswer = useRef(null);
   const refPeer = useRef(null);
   const refSocket = useRef(null);
   const refConnected = useRef(null);
@@ -223,7 +222,6 @@ const CallScreen = (props, ref) => {
     const peer = new RTCPeerConnection({
       iceServers: CallManager.DEFAULT_ICE.iceServers,
     });
-    debugger;
     refPeer.current = peer;
     peer.onicecandidate = onICECandiate;
     peer.onaddstream = onAddStream;
@@ -316,7 +314,7 @@ const CallScreen = (props, ref) => {
               refMakeCall.current = true;
               refCallingData.current = s.data.call?.data || {};
               refCallId.current = s.data.call?.callId;
-              refCreateOfferOrAnswer.current = false;
+              refCreateCalling.current = false; //danh dấu là chưa thực hiện cuộc gọi
               await setupWebRTC();
               setState({ isVisible: true });
               InCallManager.setKeepScreenOn(true);
@@ -449,24 +447,37 @@ const CallScreen = (props, ref) => {
 
   const onICEGratherStateChange = (e) => {
     switch (refPeer.current?.iceGatheringState) {
-      case "complete":
+      case "complete": //khi ice đã chuyển trạng thái sang complete
         if (
-          refPendingCandidates.current.length > 0 &&
-          !refCreateOfferOrAnswer.current
+          //kiểm tra danh sách candidate có không.
+          refPendingCandidates.current.length > 0
         ) {
-          if (refTimeoutCreateCalling.current) {
-            clearTimeout(refTimeoutCreateCalling.current);
-            refTimeoutCreateCalling.current = null;
+          if (!refCreateCalling.current) {
+            //kiểm tra xem đã thực hiện cuộc gọi chưa. nếu chưa thì thực hiện, nếu rồi thì bỏ qua không thực hiện nữa
+            if (refTimeoutCreateCalling.current) {
+              //kiểm tra xem có time out cuộc gọi nào không. nếu có thì clear timeout
+              clearTimeout(refTimeoutCreateCalling.current);
+              refTimeoutCreateCalling.current = null;
+            }
+            onCreateCalling(); //thực hiện cuộc gọi
           }
-          onCreateCalling();
+        } else {
+          // if(refFinishAnswer.current) //kiểm tra xem đã thực hiện finish answer chưa.
+          // {
+          //   if (refTimeoutFinishAnswer.current) { //kiểm tra xem có time out finish answer nào không. nếu có thì clear timeout
+          //     clearTimeout(refTimeoutFinishAnswer.current);
+          //     refTimeoutFinishAnswer.current = null;
+          //   }
+          // }
+          // onFinishAnswer(); //thực hiện finish answer
         }
         break;
     }
   };
 
   const onCreateCalling = () => {
-    refCreateOfferOrAnswer.current = true;
-    if (!refOffer.current) return;
+    if (!refOffer.current) return; //nếu chưa tạo được offer thì bỏ qua.
+    refCreateCalling.current = true; //khi thực hiện cuộc gọi thì đánh dấu là đã thực hiện cuộc gọi để cancel những request khác.
     refOffer.current.sdp = BandwidthHandler.getSdp(refOffer.current.sdp);
     fetch(CallManager.host + "/api/call/calling/" + refCallId.current, {
       method: "PUT", // *GET, POST, PUT, DELETE, etc.
@@ -482,46 +493,61 @@ const CallScreen = (props, ref) => {
     })
       .then((s) => s.json())
       .then((s) => {
+        refPendingCandidates.current = []; //sau khi tạo calling xong thì clear danh sách candidate luôn, vì cũng không dùng đến nữa.
         switch (s?.code) {
           case 0:
             break;
           default:
-            refCreateOfferOrAnswer.current = false;
+            refCreateCalling.current = false; //ngược lại nếu có error thì đánh dấu là chưa tạo xong calling.
             props.showMessage &&
               props.showMessage({ message: s.message, type: 0 });
         }
       })
       .catch((e) => {
-        refCreateOfferOrAnswer.current = false;
+        refPendingCandidates.current = []; //sau khi tạo offer xong thì clear danh sách candidate luôn.
+        refCreateCalling.current = false;
         props.showMessage && props.showMessage({ message: e.message, type: 2 });
       });
   };
 
+  const onSocketCandidate = async (data = {}) => {
+    if (refPeer.current && data.callId == refCallId.current && data.ice) {
+      //sau khi nhận dc ice từ partner thì sẽ add vào danh sách pending candidas
+      refPendingCandidates.current.push(data.ice);
+      if (refPeer.current.remoteDescription()) {
+        //kiểm tra xem peer đã add xong remote description chưa
+        //nếu đã add xong rồi thì tiến hành add các pending remote ic gửi từ partner
+        addRemoteICE();
+      }
+    }
+  };
   const onICECandiate = (e) => {
     const { candidate } = e;
     if (candidate) {
-      if (!refReceiverd.current) {
-        refPendingCandidates.current.push(candidate);
-        if (refTimeoutCreateCalling.current) {
-          clearTimeout(refTimeoutCreateCalling.current);
-        }
-        refTimeoutCreateCalling.current = setTimeout(() => {
-          onCreateCalling();
-        }, 3000);
-      } else {
+      if (refReceiverd.current) {
+        //nếu là người nhận
         sendMessage(constants.socket_type.CANDIDATE, {
+          //sau khi lấy dc candidate xong thì emit lên server socket để bắn sang người gọi luôn
           userId: props.userId,
           ice: candidate,
           callId: refCallId.current,
         });
+      } else {
+        //ngược lại nếu là người gọi
+        refPendingCandidates.current.push(candidate); //thì thêm các candidate vào list
+        if (refTimeoutCreateCalling.current)
+          // đồng thời nếu có 1 timeout để thực hiện cuộc gọi thì cancel timeout đấy đi
+          clearTimeout(refTimeoutCreateCalling.current);
       }
+      refTimeoutCreateCalling.current = setTimeout(() => {
+        //đồng thời set 1 timeout mới để thực hiện cuộc gọi
+        onCreateCalling();
+      }, 2000);
     }
   };
 
   const onAddStream = (e) => {
-    console.log("nammn", "begin setRemoteStreamURL", e.stream);
     setRemoteStreamURL(e.stream.toURL());
-    console.log("nammn", "end setRemoteStreamURL", e.stream);
   };
 
   const onCallKeepAnswer = ({ callUUID }) => {
@@ -551,7 +577,7 @@ const CallScreen = (props, ref) => {
       VoipPushNotification.removeEventListener("register");
     }
   };
-  const onOfferReceived = async (data = {}) => {
+  const onSocketOffer = async (data = {}) => {
     if (refCallId.current || props.userId != data.data.to) {
       if (Platform.OS == "ios") {
         //mà device là ios thì tắt callkeep (androi không dùng callkeep) và đánh dấu reject trong appdelegate
@@ -589,9 +615,10 @@ const CallScreen = (props, ref) => {
       return;
     }
 
-    refOfferData.current = data;
-    refCallId.current = data.callId;
-    refReceiverd.current = true;
+    refOfferData.current = data; // giữ lại thông tin cuộc gọi
+    refCallingData.current = data.data || {}; // giữ lại thông tin user trong cuộc gọi
+    refCallId.current = data.callId; //giữ lại callId
+    refReceiverd.current = true; //đánh dấu là đã nhận cuộc gọi
     if (Platform.OS == "ios") {
       // nếu là thiết bị ios thì hiển thị callkeep
       RNCallKeep.displayIncomingCall(data.callId, "", data.data.fromName);
@@ -599,7 +626,7 @@ const CallScreen = (props, ref) => {
     else {
       incomingSound();
     }
-    setState({ isVisible: true, isOfferReceiverd: true });
+    setState({ isVisible: true, isReceiverd: true }); //khi cuộc gọi đến thì hiển thi luôn màn hình cuộc gọi
   };
 
   const onAnswer = (callUUid) => async () => {
@@ -612,7 +639,7 @@ const CallScreen = (props, ref) => {
         return new Promise(async (resolve, reject) => {
           refOffer.current = refOfferData.current?.offer; //lấy offer từ call data
           refCallingData.current = refOfferData.current?.data || {}; //lấy info cuộc gọi
-          refCreateOfferOrAnswer.current = false; //đánh dấu là chưa tạo xong offer answer
+          refCreateCalling.current = false; //đánh dấu là chưa tạo xong offer answer
           await setupWebRTC(); //setup webrtc và tạo peer
           if (!refPeer.current) {
             reject({ code: 1, message: "peer null" });
@@ -655,33 +682,25 @@ const CallScreen = (props, ref) => {
     }
   };
 
-  const onCandidate = async (data = {}) => {
-    if (refPeer.current && data.callId == refCallId.current && data.ice) {
-      // if (data.ice.sdp) { //không bao giờ xảy ra case này vì sdp offer gửi kèm từ emit offer answer
-      //   await refPeer.current.setRemoteDescription(
-      //     new RTCSessionDescription(data.ice)
-      //   );
-      // } else {
-      setTimeout(
-        (ice) => {
-          refPeer.current &&
-            refPeer.current.addIceCandidate(new RTCIceCandidate(ice));
-        },
-        3000,
-        data.ice
-      );
-      // }
-    }
+  const addRemoteICE = () => {
+    if (refPeer.current)
+      refPendingCandidates.current.forEach((item) => {
+        if (item && !item.added) {
+          item.aded = true;
+          refPeer.current.addIceCandidate(new RTCIceCandidate(item));
+        }
+      });
   };
-  const onAnswerReceived = async (data) => {
+
+  const onSocketAnswer = async (data) => {
     onTimeOut();
     callPickUp();
     if (refPeer.current) {
-      console.log("nammn", "offer: begin setRemoteDescription", data.answer);
       await refPeer.current.setRemoteDescription(
         new RTCSessionDescription(data.answer)
       );
-      console.log("nammn", "offer: end setRemoteDescription", data.answer);
+      //sau khi nhận cuộc gọi xong thì tiến hành add remote ice vào peer
+      addRemoteICE();
       setState({
         isAnswerSuccess: true,
       });
@@ -712,7 +731,7 @@ const CallScreen = (props, ref) => {
     }
   };
 
-  const onTimeOutPair = (data = {}) => {};
+  const onSocketTimeOutPair = (data = {}) => {};
 
   const onLeave = (data = {}) => {
     refIgnoreCallIds.current.push(data.callId);
@@ -759,7 +778,7 @@ const CallScreen = (props, ref) => {
     refCallingData.current = null;
     refPendingCandidates.current = [];
     refReceiverd.current = false;
-    refCreateOfferOrAnswer.current = false;
+    refCreateCalling.current = false;
     refOffer.current = null;
     refMakeCall.current = false;
     if (refLocalStream.current) {
@@ -788,7 +807,7 @@ const CallScreen = (props, ref) => {
       isSpeak: true,
       isFullPartner: false,
       isVisible: false,
-      isOfferReceiverd: false,
+      isReceiverd: false,
       isAnswerSuccess: false,
     });
   };
@@ -905,10 +924,13 @@ const CallScreen = (props, ref) => {
         constants.socket_type.DISCONNECT,
         onSocketDisconnect
       );
-      refSocket.current.on(constants.socket_type.CANDIDATE, onCandidate);
-      refSocket.current.on(constants.socket_type.TIMEOUT_PAIR, onTimeOutPair);
-      refSocket.current.on(constants.socket_type.OFFER, onOfferReceived);
-      refSocket.current.on(constants.socket_type.ANSWER, onAnswerReceived);
+      refSocket.current.on(constants.socket_type.CANDIDATE, onSocketCandidate);
+      refSocket.current.on(
+        constants.socket_type.TIMEOUT_PAIR,
+        onSocketTimeOutPair
+      );
+      refSocket.current.on(constants.socket_type.OFFER, onSocketOffer);
+      refSocket.current.on(constants.socket_type.ANSWER, onSocketAnswer);
       refSocket.current.on(
         constants.socket_type.TURN_OFF_VIDEO,
         onTurnOffVideo
@@ -930,7 +952,7 @@ const CallScreen = (props, ref) => {
     </View>
   );
 
-  const buttonAcceptCall = state.isOfferReceiverd && !state.isAnswerSuccess && (
+  const buttonAcceptCall = state.isReceiverd && !state.isAnswerSuccess && (
     <View style={{ flex: 1, alignItems: "center" }}>
       <TouchableOpacity onPress={onAnswer()} style={{ padding: 10, flex: 1 }}>
         <Image
@@ -1012,7 +1034,7 @@ const CallScreen = (props, ref) => {
           display: "flex",
           flexDirection: "row",
           zIndex: 4,
-          backgroundColor: "#FFFFFF20",
+          backgroundColor: "#00000080",
           margin: 20,
           borderRadius: 20,
         }}
@@ -1029,7 +1051,7 @@ const CallScreen = (props, ref) => {
       isDisableVideo,
       isMuted,
       state.isSpeak,
-      state.isOfferReceiverd,
+      state.isReceiverd,
     ]
   );
 
@@ -1096,7 +1118,7 @@ const CallScreen = (props, ref) => {
           {viewActionBottom}
         </View>
       ),
-    [localStream, state.isOfferReceiverd, state.isAnswerSuccess, props.userId]
+    [localStream, state.isReceiverd, state.isAnswerSuccess, props.userId]
   );
 
   const myStream = useMemo(() => {
@@ -1282,7 +1304,7 @@ const CallScreen = (props, ref) => {
       state.showToast,
       remoteStreamURL,
       localStream,
-      state.isOfferReceiverd,
+      state.isReceiverd,
       state.isAnswerSuccess,
       isDisableVideo,
       isMuted,

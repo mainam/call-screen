@@ -26,9 +26,9 @@ class CallManager {
       {
         urls: "stun:stun3.l.google.com:19302",
       },      
-      {
-        urls: "stun:stun.services.mozilla.com",
-      },
+      // {
+      //   urls: "stun:stun.services.mozilla.com",
+      // },
     ],
   };
   init(
