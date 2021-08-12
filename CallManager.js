@@ -1,7 +1,7 @@
 class CallManager {
   _defaultCall = null;
   host = "";
-  deviceId = "";
+  deviceInfo = "";
   packageName = "";
   firebase = null;
   DEFAULT_ICE = {
@@ -35,7 +35,7 @@ class CallManager {
     {
       iceServer = [],
       socketHost,
-      deviceId,
+      deviceInfo,
       packageName,
       firebase,
       callingName,
@@ -52,7 +52,7 @@ class CallManager {
       ...this.DEFAULT_ICE.iceServers
     ];
     this.host = socketHost;
-    this.deviceId = deviceId;
+    this.deviceInfo = deviceInfo;
     this.packageName = packageName;
     this.firebase = firebase;
     this.callingName = callingName;

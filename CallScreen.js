@@ -68,6 +68,7 @@ const CallScreen = (props, ref) => {
   const refAppState = useRef(AppState.currentState);
   const refLoginToken = useRef(null);
   const refUserId = useRef(null);
+  const refPhoneNumber = useRef(null);
   const refTimeout = useRef(null);
   const refReceiverd = useRef(null);
   const refMakeCall = useRef(false);
@@ -108,7 +109,8 @@ const CallScreen = (props, ref) => {
   }, []);
   useEffect(() => {
     refUserId.current = props.userId;
-  }, [props.loginToken, props.userId]);
+    refPhoneNumber.current = props.phone;
+  }, [props.loginToken, props.userId, props.phone]);
   useEffect(() => {
     if (!state.isVisible) {
       resetState();
@@ -199,6 +201,9 @@ const CallScreen = (props, ref) => {
   };
 
   const callPickUp = () => {
+    if (refMakeCall.current) {
+      soundUtils.stop();
+    }
     InCallManager.start({ media: "video", auto: true });
     InCallManager.setForceSpeakerphoneOn(true);
     InCallManager.setSpeakerphoneOn(true);
@@ -297,7 +302,7 @@ const CallScreen = (props, ref) => {
     });
   };
 
-  const startCall = async ({ from, fromName, to, toName } = {}) => {
+  const startCall = async ({ from, fromName, to, toName, bookingId, hospitalId, hospitalName } = {}) => {
     try {
       fetch(CallManager.host + "/api/call/create-call?force=true", {
         method: "POST", // *GET, POST, PUT, DELETE, etc.
@@ -309,6 +314,21 @@ const CallScreen = (props, ref) => {
           fromName,
           to: to,
           toName,
+          bookingId,
+          hospitalId,
+          hospitalName,
+          groups: [
+            {
+              id: from,
+              name: fromName,
+              phone: refPhoneNumber.current,
+              deviceInfo: CallManager.deviceInfo,
+            },
+            {
+              id: to,
+              name: toName,
+            },
+          ],
         }), // body data type must match "Content-Type" header
       })
         .then((s) => s.json())
@@ -562,7 +582,8 @@ const CallScreen = (props, ref) => {
 
   const onAddStream = (e) => {
     setRemoteStreamURL(e.stream.toURL());
-    setTimeout(() => { //sau khi đã có remote stream thì bắt đầu phát loa cuộc gọi
+    setTimeout(() => {
+      //sau khi đã có remote stream thì bắt đầu phát loa cuộc gọi
       callPickUp();
     }, 1000);
   };
@@ -617,7 +638,7 @@ const CallScreen = (props, ref) => {
           refSocket.current.emit(constants.socket_type.LEAVE_AND_SIGNOUT, {
             // gửi 1 emit lên server để báo bận và remove token theo deviceId
             userId: data.data.to,
-            deviceId: CallManager.deviceId,
+            deviceId: CallManager.deviceInfo?.deviceId,
           });
         }
       }
@@ -732,7 +753,12 @@ const CallScreen = (props, ref) => {
             //đồng thời emit event tới socket server để đánh dấu là đã answer call này.
             callId: refCallId.current, //ở đây phải dùng socket emit để broadcast tới các connection khác reject call khi 1 user đã answer
             answer: answer, //trong emit này thì có đẩy answer lên cùng.
-            userId: refUserId.current || refUserId.current,
+            userId: refUserId.current,
+            myInfo: {
+              id: refUserId.current,
+              deviceInfo: CallManager.deviceInfo,
+              phone: refPhoneNumber.current,
+            },
           });
           resolve(true);
         });
@@ -824,7 +850,6 @@ const CallScreen = (props, ref) => {
   };
 
   const resetState = () => {
-    debugger;
     stopSound();
     if (refCallId.current && VideoCallModule?.reject) {
       VideoCallModule.reject(refCallId.current);
@@ -969,7 +994,7 @@ const CallScreen = (props, ref) => {
         token,
         id: refUserId.current,
         platform: Platform.OS,
-        deviceId: CallManager.deviceId,
+        deviceId: CallManager.deviceInfo?.deviceId,
         packageName: CallManager.packageName,
         fullName: props.fullName,
       });
