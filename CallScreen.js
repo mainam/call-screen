@@ -199,11 +199,6 @@ const CallScreen = (props, ref) => {
   };
 
   const callPickUp = () => {
-    soundUtils.stop();
-    InCallManager.stopRingback();
-    InCallManager.stopRingtone();
-    InCallManager.stop();
-    Vibration.cancel();
     InCallManager.start({ media: "video", auto: true });
     InCallManager.setForceSpeakerphoneOn(true);
     InCallManager.setSpeakerphoneOn(true);
@@ -567,6 +562,9 @@ const CallScreen = (props, ref) => {
 
   const onAddStream = (e) => {
     setRemoteStreamURL(e.stream.toURL());
+    setTimeout(() => { //sau khi đã có remote stream thì bắt đầu phát loa cuộc gọi
+      callPickUp();
+    }, 1000);
   };
 
   const onCallKeepAnswer = ({ callUUID }) => {
@@ -706,6 +704,7 @@ const CallScreen = (props, ref) => {
 
       const answer = () => {
         return new Promise(async (resolve, reject) => {
+          stopSound();
           refOffer.current = refOfferData.current?.offer; //lấy offer từ call data
           refCallingData.current = refOfferData.current?.data || {}; //lấy info cuộc gọi
           refCreateCalling.current = false; //đánh dấu là chưa tạo xong offer answer
@@ -735,7 +734,6 @@ const CallScreen = (props, ref) => {
             answer: answer, //trong emit này thì có đẩy answer lên cùng.
             userId: refUserId.current || refUserId.current,
           });
-          callPickUp();
           resolve(true);
         });
       };
@@ -765,7 +763,6 @@ const CallScreen = (props, ref) => {
 
   const onSocketAnswer = async (data) => {
     onTimeOut();
-    callPickUp();
     if (refPeer.current) {
       await refPeer.current.setRemoteDescription(
         new RTCSessionDescription(data.answer)
