@@ -50,6 +50,9 @@ const PATTERN = [
 const isFront = true; // Use Front camera?
 
 const CallScreen = (props, ref) => {
+  const refLoginToken = useRef(null);
+  const refUserId = useRef(null);
+  const refPhoneNumber = useRef(null);
   const refActionSheet = useRef(null);
   const refState = useRef(null);
   const refCreateCalling = useRef(null);
@@ -66,9 +69,6 @@ const CallScreen = (props, ref) => {
   const refCallingData = useRef(null);
   const refIgnoreCallIds = useRef([]);
   const refAppState = useRef(AppState.currentState);
-  const refLoginToken = useRef(null);
-  const refUserId = useRef(null);
-  const refPhoneNumber = useRef(null);
   const refTimeout = useRef(null);
   const refReceiverd = useRef(null);
   const refMakeCall = useRef(false);
@@ -97,7 +97,6 @@ const CallScreen = (props, ref) => {
   };
   useEffect(() => {
     addEventCallKeep();
-    registerSocket();
     AppState.addEventListener("change", handleAppStateChange);
     if (InCallManager.recordPermission !== "granted") {
       InCallManager.requestRecordPermission();
@@ -108,9 +107,15 @@ const CallScreen = (props, ref) => {
     };
   }, []);
   useEffect(() => {
-    refUserId.current = props.userId;
     refPhoneNumber.current = props.phone;
-  }, [props.loginToken, props.userId, props.phone]);
+  }, [props.phone]);
+  useEffect(()=>{ //khi có thông tin đăng nhập thì thực hiện kết nối tới socket server
+    refUserId.current = props.userId;
+    refLoginToken.current = props.loginToken;
+    if (refUserId.current && refLoginToken.current) {
+      onConnectSocket();
+    }
+  },[props.loginToken, props.userId])
   useEffect(() => {
     if (!state.isVisible) {
       resetState();
@@ -120,23 +125,18 @@ const CallScreen = (props, ref) => {
     startCall,
   }));
   useEffect(() => {
-    if (refLoginToken.current != props.loginToken) {
-      refLoginToken.current = props.loginToken;
-      refConnected.current = false; //bỏ đánh dấu là đã connect
-      if (!props.loginToken) {
-        refSocket.current?.emit(
-          constants.socket_type.DISCONNECT,
-          { token: refDeviceToken.current, platform: Platform.OS },
-          (data) => {
-            refSocket.current.disconnect();
-            refSocket.current = null;
-          }
-        );
-      } else {
-        registerSocket();
-      }
+    if (!props.userId && refConnected.current && refSocket.current) { //nếu chưa đăng nhập mà đã kết nối tới server socket
+      refSocket.current?.emit( //thì thực hiện disconnect tới server socket
+        constants.socket_type.DISCONNECT,
+        { token: refDeviceToken.current, platform: Platform.OS },
+        (data) => {
+          refSocket.current.disconnect(); 
+          refSocket.current = null;
+          refConnected.current =false;
+        }
+      );
     }
-  }, [props.loginToken]);
+  }, [props.userId]);
 
   const showNotice = ({ message }) => {
     if (refTimeOutToast.current) {
@@ -302,7 +302,15 @@ const CallScreen = (props, ref) => {
     });
   };
 
-  const startCall = async ({ from, fromName, to, toName, bookingId, hospitalId, hospitalName } = {}) => {
+  const startCall = async ({
+    from,
+    fromName,
+    to,
+    toName,
+    bookingId,
+    hospitalId,
+    hospitalName,
+  } = {}) => {
     try {
       fetch(CallManager.host + "/api/call/create-call?force=true", {
         method: "POST", // *GET, POST, PUT, DELETE, etc.
@@ -310,9 +318,9 @@ const CallScreen = (props, ref) => {
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
-          from: from,
+          from,
           fromName,
-          to: to,
+          to,
           toName,
           bookingId,
           hospitalId,
@@ -323,6 +331,7 @@ const CallScreen = (props, ref) => {
               name: fromName,
               phone: refPhoneNumber.current,
               deviceInfo: CallManager.deviceInfo,
+              swVersion: require('./package.json').version,
             },
             {
               id: to,
@@ -758,6 +767,7 @@ const CallScreen = (props, ref) => {
               id: refUserId.current,
               deviceInfo: CallManager.deviceInfo,
               phone: refPhoneNumber.current,
+              swVersion: require('./package.json').version,
             },
           });
           resolve(true);
@@ -976,35 +986,39 @@ const CallScreen = (props, ref) => {
         VoipPushNotification.requestPermissions();
         VoipPushNotification.addEventListener("register", (token) => {
           refDeviceToken.current = token;
-          connectToSocket(token);
+          onRegisterToken(token);
         });
         VoipPushNotification.registerVoipToken();
       } else {
         const token = await CallManager.firebase.messaging().getToken();
         refDeviceToken.current = token;
-        connectToSocket(token);
+        onRegisterToken(token);
       }
     } catch (error) {
       console.log(error);
     }
   };
-  const connectToSocket = (token) => {
+  const onRegisterToken = (token) => {
     refSocket.current &&
       refSocket.current.emit(constants.socket_type.CONNECT, {
         token,
         id: refUserId.current,
+        userId: refUserId.current,
         platform: Platform.OS,
         deviceId: CallManager.deviceInfo?.deviceId,
+        deviceInfo: CallManager.deviceInfo,
+        swVersion: require('./package.json').version,
         packageName: CallManager.packageName,
         fullName: props.fullName,
       });
   };
-  const registerSocket = () => {
-    if (props.loginToken && !refSocket.current) {
+  const onConnectSocket = () => {
+    if (refLoginToken.current && refUserId.current && !refSocket.current) {
+      //kiểm tra khi nào có userId và loginToken
       refSocket.current = props.io.connect(CallManager.host, {
         transports: ["websocket"],
         query: {
-          token: props.loginToken, //verify socket io với login token,
+          token: refLoginToken.current, //verify socket io với login token,
           userId: refUserId.current,
         },
         upgrade: true,
